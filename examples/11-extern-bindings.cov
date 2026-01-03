@@ -1,0 +1,43 @@
+// External Bindings (FFI)
+// Wrapping JavaScript/npm libraries with Covenant's type and effect system
+
+// HTTP client (axios)
+extern get(url: String) -> Response | HttpError
+    from "axios"
+    effect [network]
+
+extern post(url: String, body: String) -> Response | HttpError
+    from "axios"
+    effect [network]
+
+// Filesystem (Node fs)
+extern read_file(path: String) -> String | IoError
+    from "fs/promises"
+    effect [filesystem]
+
+extern write_file(path: String, content: String) -> () | IoError
+    from "fs/promises"
+    effect [filesystem]
+
+// Crypto (pure - no side effects)
+extern sha256(input: String) -> String
+    from "crypto"
+    effect []
+
+extern random_bytes(length: Int) -> Bytes
+    from "crypto"
+    effect [random]
+
+// Console
+extern println(msg: String) -> ()
+    from "console"
+    effect [console]
+
+// Database
+extern query(conn: Connection, sql: String) -> Rows | DbError
+    from "pg"
+    effect [database]
+
+extern connect(url: String) -> Connection | DbError
+    from "pg"
+    effect [database]

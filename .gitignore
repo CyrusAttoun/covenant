@@ -1,0 +1,21 @@
+# Editor and IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs (when compiler exists)
+/target/
+*.wasm
+*.wat
+
+# Dependencies (when package manager exists)
+/node_modules/
+
+# Claude Code working directory (keep CLAUDE.md, exclude plans)
+.claude/plans/

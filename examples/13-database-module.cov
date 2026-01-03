@@ -1,0 +1,64 @@
+// Database Module - typed schema declaration
+
+database app_db
+    connection: "postgres://localhost:5432/myapp"
+{
+    table users {
+        id: Int primary auto
+        email: String unique
+        name: String
+        created_at: DateTime
+        deleted_at: DateTime nullable  // becomes DateTime? in queries
+
+        index(email)
+    }
+
+    table posts {
+        id: Int primary auto
+        author_id: Int
+        title: String
+        body: String
+        published: Bool
+
+        foreign author_id -> users
+    }
+}
+
+// Queries compile to SQL
+get_active_users() -> User[] | DbError
+    import { app_db } from database
+{
+    query app_db {
+        select * from users
+        where deleted_at = none  // compiles to: WHERE deleted_at IS NULL
+        order by name
+    }
+}
+
+// CRUD operations
+create_post(author_id: Int, title: String, body: String) -> Post | DbError
+    import { app_db } from database
+{
+    insert into app_db.posts {
+        author_id: author_id,
+        title: title,
+        body: body,
+        published: false,
+    }
+}
+
+publish_post(post_id: Int) -> () | DbError
+    import { app_db } from database
+{
+    update app_db.posts
+    set published: true
+    where id = post_id
+}
+
+delete_old_drafts(days: Int) -> () | DbError
+    import { app_db } from database
+{
+    delete from app_db.posts
+    where published = false
+      and created_at < days_ago(days)
+}

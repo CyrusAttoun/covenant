@@ -1,0 +1,11 @@
+// File I/O - multiple effects combined
+
+main() -> () | IoError
+    import { read_file, write_file } from fs
+    import { println } from console
+{
+    let content = read_file("input.txt")
+    let upper = content.to_uppercase()
+    write_file("output.txt", upper)
+    println("Done!")
+}

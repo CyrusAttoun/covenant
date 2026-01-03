@@ -1,0 +1,22 @@
+// Pure Functions - no imports, no effects
+// Compiler verifies no effectful calls
+
+add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+factorial(n: Int) -> Int {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+fibonacci(n: Int) -> Int {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}

@@ -1,0 +1,35 @@
+// HTTP Server - separating pure routing from effectful I/O
+
+struct Request {
+    method: String,
+    path: String,
+    headers: Map<String, String>,
+    body: String,
+}
+
+struct Response {
+    status: Int,
+    body: String,
+}
+
+// Pure routing logic - no imports needed
+handle_request(req: Request) -> Response {
+    match (req.method, req.path) {
+        ("GET", "/") => Response { status: 200, body: "Hello!" },
+        ("GET", "/health") => Response { status: 200, body: "OK" },
+        _ => Response { status: 404, body: "Not Found" },
+    }
+}
+
+main() -> () | IoError
+    import { listen, respond } from http_server
+    import { println } from console
+{
+    let server = listen(8080)
+    println("Listening on :8080")
+
+    for req in server.requests() {
+        let response = handle_request(req)  // pure
+        respond(req, response)               // effectful
+    }
+}

@@ -1,0 +1,32 @@
+// Higher-Order Functions
+
+// map is pure if f is pure, effectful if f is effectful
+map<T, U>(list: T[], f: (T) -> U) -> U[] {
+    let mut result = []
+    for item in list {
+        result.push(f(item))
+    }
+    result
+}
+
+// filter - predicate must be pure
+filter<T>(list: T[], pred: (T) -> Bool) -> T[] {
+    let mut result = []
+    for item in list {
+        if pred(item) {
+            result.push(item)
+        }
+    }
+    result
+}
+
+// Usage
+double(x: Int) -> Int { x * 2 }
+is_even(x: Int) -> Bool { x % 2 = 0 }
+
+example() -> Int[] {
+    let nums = [1, 2, 3, 4, 5]
+    let doubled = map(nums, double)       // pure
+    let evens = filter(doubled, is_even)  // pure
+    evens  // [4, 8]
+}

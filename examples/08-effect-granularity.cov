@@ -1,0 +1,25 @@
+// Effect Granularity - mixed purity in a module
+
+// Pure - no imports
+format_date(d: Date) -> String {
+    "{d.year}-{d.month}-{d.day}"
+}
+
+// Effectful - console capability
+log_date(d: Date)
+    import { println } from console
+{
+    println(format_date(d))
+}
+
+// Effectful - time capability
+fetch_current_date() -> Date
+    import { now } from datetime
+{
+    now()
+}
+
+// Consumers choose what effects they inherit:
+//   import { format_date } from utils        // no effects
+//   import { log_date } from utils           // inherits [console]
+//   import { fetch_current_date } from utils // inherits [datetime]

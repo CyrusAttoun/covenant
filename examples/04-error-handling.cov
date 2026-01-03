@@ -1,0 +1,51 @@
+// Error Handling - union returns and handle keyword
+
+enum ParseError {
+    InvalidFormat(String),
+    MissingField(String),
+    OutOfRange { field: String, value: Int },
+}
+
+struct Config {
+    host: String,
+    port: Int,
+    debug: Bool,
+}
+
+// Pure function - can still return errors for validation
+parse_config(input: String) -> Config | ParseError {
+    let lines = input.split("\n")
+
+    let host = lines.find(|l| l.starts_with("host="))
+        .map(|l| l.strip_prefix("host="))
+        .ok_or(ParseError::MissingField("host"))
+
+    let host = host handle {
+        ParseError(e) => return e,
+    }
+
+    let port_str = lines.find(|l| l.starts_with("port="))
+        .map(|l| l.strip_prefix("port="))
+        .ok_or(ParseError::MissingField("port"))
+
+    let port_str = port_str handle {
+        ParseError(e) => return e,
+    }
+
+    let port = port_str.parse_int() handle {
+        _ => return ParseError::InvalidFormat("port must be a number"),
+    }
+
+    if port < 1 || port > 65535 {
+        return ParseError::OutOfRange {
+            field: "port",
+            value: port,
+        }
+    }
+
+    let debug = lines.find(|l| l.starts_with("debug="))
+        .map(|l| l.strip_prefix("debug=") = "true")
+        .unwrap_or(false)
+
+    Config { host, port, debug }
+}

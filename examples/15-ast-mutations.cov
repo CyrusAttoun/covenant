@@ -1,0 +1,58 @@
+// AST Mutations - metaprogramming via CRUD on source code
+// These operations modify the symbol graph, which serializes back to .cov files
+
+// Rename a function across the codebase
+rename_function(old_name: String, new_name: String) -> () | MetaError
+    import { project } from meta
+{
+    // Update the function declaration
+    update project.functions
+    set name: new_name
+    where name = old_name
+
+    // Update all call sites (bidirectional refs make this easy)
+    update project.call_expressions
+    set callee: new_name
+    where callee = old_name
+}
+
+// Add a new function
+add_getter(struct_name: String, field_name: String) -> () | MetaError
+    import { project } from meta
+{
+    let struct_info = query project {
+        select * from structs where name = struct_name limit 1
+    }
+
+    let field = struct_info.fields.find(|f| f.name = field_name)
+
+    insert into project.functions {
+        name: "get_" + field_name,
+        params: [{ name: "self", type: struct_name }],
+        return_type: field.type,
+        body: "self." + field_name,
+        module: struct_info.module,
+    }
+}
+
+// Remove unused code
+prune_dead_code() -> Int | MetaError
+    import { project } from meta
+{
+    let dead = query project {
+        select * from functions
+        where called_by = []
+          and is_exported = false
+          and is_entry_point = false
+    }
+
+    delete from project.functions
+    where called_by = []
+      and is_exported = false
+      and is_entry_point = false
+
+    dead.len()
+}
+
+// Note: AST mutations require the [meta] capability
+// The host runtime can refuse to grant this to untrusted code

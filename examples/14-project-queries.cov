@@ -1,0 +1,54 @@
+// Project Queries - AST as a queryable database
+
+// Find all functions with database effects
+find_db_functions() -> FunctionInfo[]
+    import { project } from meta
+{
+    query project {
+        select * from functions
+        where effects contains "database"
+    }
+}
+
+// Find all callers of a specific function (uses bidirectional refs)
+find_callers(fn_name: String) -> FunctionInfo[]
+    import { project } from meta
+{
+    query project {
+        select called_by from functions
+        where name = fn_name
+    }
+}
+
+// Find unused code
+find_dead_code() -> FunctionInfo[]
+    import { project } from meta
+{
+    query project {
+        select * from functions
+        where called_by = []
+          and is_exported = false
+          and is_entry_point = false
+    }
+}
+
+// Find all hardcoded URLs
+find_urls() -> LiteralInfo[]
+    import { project } from meta
+{
+    query project {
+        select * from literals
+        where type = "String"
+          and value matches "https?://.*"
+    }
+}
+
+// Method chaining alternative (same result)
+find_db_functions_alt() -> FunctionInfo[]
+    import { project } from meta
+{
+    project
+        .functions()
+        .filter(|f| f.effects contains "database")
+        .collect()
+}

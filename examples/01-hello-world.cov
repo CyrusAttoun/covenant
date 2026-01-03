@@ -1,0 +1,7 @@
+// Hello World - minimal effectful program
+
+main()
+    import { println } from console
+{
+    println("Hello, world!")
+}

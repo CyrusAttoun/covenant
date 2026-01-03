@@ -1,0 +1,12 @@
+// Using External Bindings
+
+fetch_and_save(url: String, path: String) -> () | HttpError | IoError
+    import { get } from axios
+    import { write_file } from fs
+{
+    let response = get(url)
+    write_file(path, response.body)
+}
+
+// The compiler enforces that fetch_and_save has effects [network, filesystem]
+// because it imports functions with those effects.

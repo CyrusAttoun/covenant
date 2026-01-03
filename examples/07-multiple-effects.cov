@@ -1,0 +1,18 @@
+// Multiple Effects - combining capabilities
+
+upload_file(path: String, url: String) -> () | IoError | HttpError
+    import { println } from console
+    import { read_file } from fs
+    import { post } from axios
+{
+    println("Reading file...")
+    let content = read_file(path)
+
+    println("Uploading...")
+    let response = post(url, content)
+
+    println("Done: " + response.body)
+}
+
+// Each import brings its capability into scope.
+// The function's effect set is the union of all its imports.

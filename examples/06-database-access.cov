@@ -1,0 +1,28 @@
+// Database Access - typed queries
+
+struct User {
+    id: Int,
+    name: String,
+    email: String,
+}
+
+get_user_by_id(id: Int) -> User? | DbError
+    import { app_db } from database
+{
+    query app_db {
+        select * from users where id = id limit 1
+    }
+}
+
+create_user(name: String, email: String) -> User | DbError
+    import { app_db } from database
+{
+    insert into app_db.users {
+        name: name,
+        email: email,
+    }
+
+    query app_db {
+        select * from users where email = email limit 1
+    }
+}

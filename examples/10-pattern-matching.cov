@@ -1,0 +1,35 @@
+// Pattern Matching
+
+enum Json {
+    Null,
+    Bool(Bool),
+    Number(Float),
+    String(String),
+    Array(Json[]),
+    Object(Map<String, Json>),
+}
+
+json_type_name(value: Json) -> String {
+    match value {
+        Json::Null => "null",
+        Json::Bool(_) => "boolean",
+        Json::Number(_) => "number",
+        Json::String(_) => "string",
+        Json::Array(_) => "array",
+        Json::Object(_) => "object",
+    }
+}
+
+get_string(value: Json) -> String? {
+    match value {
+        Json::String(s) => s,
+        _ => none,
+    }
+}
+
+get_field(obj: Json, key: String) -> Json? {
+    match obj {
+        Json::Object(map) => map.get(key),
+        _ => none,
+    }
+}
