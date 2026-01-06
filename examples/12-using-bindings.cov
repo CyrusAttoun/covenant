@@ -1,12 +1,43 @@
 // Using External Bindings
 
-fetch_and_save(url: String, path: String) -> () | HttpError | IoError
-    import { get } from axios
-    import { write_file } from fs
-{
-    let response = get(url)
-    write_file(path, response.body)
-}
+snippet id="fetch.fetch_and_save" kind="fn"
+
+effects
+  effect network
+  effect filesystem
+end
+
+signature
+  fn name="fetch_and_save"
+    param name="url" type="String"
+    param name="path" type="String"
+    returns union
+      type="Unit"
+      type="HttpError"
+      type="IoError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="get"
+    arg name="url" from="url"
+    as="response"
+  end
+  step id="s2" kind="bind"
+    field="body" of="response"
+    as="body"
+  end
+  step id="s3" kind="call"
+    fn="write_file"
+    arg name="path" from="path"
+    arg name="content" from="body"
+    as="_"
+  end
+end
+
+end
 
 // The compiler enforces that fetch_and_save has effects [network, filesystem]
-// because it imports functions with those effects.
+// because it calls functions with those effects.

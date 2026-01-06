@@ -1,6 +1,6 @@
 # Covenant
 
-A programming language designed for AI-assisted development. Compiles to WASM.
+A machine-first programming language designed for LLM generation and navigation. Compiles to WASM.
 
 ---
 
@@ -8,156 +8,197 @@ A programming language designed for AI-assisted development. Compiles to WASM.
 
 | Doc | Purpose |
 |-----|---------|
-| [DESIGN.md](../DESIGN.md) | Philosophy, four-layer model, core decisions |
+| [DESIGN.md](../DESIGN.md) | Philosophy, four-layer model, core design |
 | [grammar.ebnf](../grammar.ebnf) | Formal syntax definition (machine-parseable) |
-| [examples/](../examples/) | Validated `.cov` source files |
-| [prior-art.md](../prior-art.md) | Lessons from Austral and Koka |
+| [examples/](../examples/) | Example `.cov` programs |
+| [prior-art.md](../prior-art.md) | Lessons from Austral, Koka, and LLM-native design |
 
 ---
 
 ## Quick Reference
 
-### Key Decisions
-- **Imports are effects** — function-level imports declare capabilities, no separate `requires` clause
-- **No `fn` keyword** — functions defined by signature shape alone
-- **`=` is equality** — not `==`; `:=` is assignment
-- **Unified query syntax** — same SQL-like syntax for databases and source code (AST)
-- **`none` for null** — `x = none` compiles to `IS NULL` in database queries
-- **Union returns** — `-> User | DbError | NetworkError`, no `Result<T, E>` wrapper
-- **Auto error propagation** — errors bubble up by default; use `handle` to catch
-- **Postfix types** — `User?` for optional, `User[]` for list
-- **Bidirectional refs** — compiler computes `called_by` for every function
-- **WASM target** — Sandboxed, capability-constrained, metered
+### Core Principles
+- **Machine-first IR** — deterministic, tree-shaped, keyword-heavy syntax
+- **No operators** — use keywords: `add`, `equals`, `and`, `or`, `not`
+- **SSA form** — one operation per step, named outputs (`as="result"`)
+- **Canonical ordering** — one valid way to write everything
+- **Every node has an ID** — enables precise queries and references
+- **Effects explicit** — declared in `effects` section, propagated transitively
+- **Requirements first-class** — specs and tests are queryable nodes
+- **WASM target** — sandboxed, capability-constrained, metered
 
-### Syntax at a Glance
+### Snippet Structure
 
-```covenant
-// Effectful function — import declares the capability
-get_users() -> User[] | DbError
-    import { app_db } from database
-{
-    query app_db {
-        select * from users where is_active = true
-    }
-}
+```
+snippet id="module.function_name" kind="fn"
 
-// Pure function — no imports, no effects
-double(x: Int) -> Int {
-    x * 2
-}
+effects
+  effect database
+  effect network
+end
 
-// Types
-struct User { id: Int, name: String }
-enum Status { Active, Inactive, Pending(String) }
+requires
+  req id="R-001"
+    text "Users must be retrievable by ID"
+    priority high
+  end
+end
 
-// Operators
-let x = 5              // binding uses =
-x := 10                // reassignment uses :=
-if x = 10 { ... }      // equality uses =
-if x != none { ... }   // inequality uses !=
+signature
+  fn name="get_user"
+    param name="id" type="Int"
+    returns union
+      type="User" optional
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="app_db"
+    select all
+    from="users"
+    where
+      equals field="id" var="id"
+    end
+    limit=1
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+tests
+  test id="T-001" kind="unit" covers="R-001"
+    // test steps
+  end
+end
+
+end
 ```
 
-### Unified Query Syntax
+### Operations (No Operators)
 
-The same SQL-like syntax works for databases and source code. The import determines semantics.
+| Instead of | Use |
+|------------|-----|
+| `x + y` | `op=add input var="x" input var="y"` |
+| `x == y` | `op=equals input var="x" input var="y"` |
+| `x && y` | `op=and input var="x" input var="y"` |
+| `!x` | `op=not input var="x"` |
 
-```covenant
-// DATABASE: Query external database (compiles to SQL)
-get_active_users() -> User[] | DbError
-    import { app_db } from database
-{
-    query app_db {
-        select * from users where is_active = true
-    }
-}
+### Query Syntax
 
-// PROJECT: Query source code / AST (compiles to traversal)
-find_db_functions() -> FunctionInfo[]
-    import { project } from meta
-{
-    query project {
-        select * from functions where effects contains "database"
-    }
-}
+Same syntax for database and AST queries. Target determines compilation:
+
+```
+// Database query (compiles to SQL)
+step id="s1" kind="query"
+  target="app_db"
+  select all
+  from="users"
+  where
+    equals field="id" var="user_id"
+  end
+  limit=1
+  as="user"
+end
+
+// Project query (compiles to AST traversal)
+step id="s1" kind="query"
+  target="project"
+  select all
+  from="functions"
+  where
+    contains field="effects" lit="database"
+  end
+  as="db_functions"
+end
 ```
 
 ### CRUD Operations
 
-```covenant
-// DATABASE CRUD
-insert into app_db.users { name: "Alice", email: "alice@example.com" }
-update app_db.users set is_active: false where last_login < days_ago(30)
-delete from app_db.users where id = user_id
+```
+// Insert
+step id="s1" kind="insert"
+  into="app_db.users"
+  set field="name" from="name"
+  set field="email" from="email"
+  as="new_user"
+end
 
-// PROJECT (SOURCE CODE) CRUD
-insert into project.functions { name: "new_fn", module: "auth", ... }
-update project.functions set name: "new_name" where name = "old_name"
-delete from project.functions where called_by = [] and is_exported = false
+// Update
+step id="s2" kind="update"
+  target="app_db.users"
+  set field="is_active" lit=false
+  where
+    less field="last_login" var="cutoff"
+  end
+  as="updated"
+end
+
+// Delete
+step id="s3" kind="delete"
+  from="app_db.users"
+  where
+    equals field="id" var="user_id"
+  end
+  as="_"
+end
 ```
 
 ### Null Handling
 
-```covenant
-// In Covenant code
-let user: User? = none           // optional with no value
-
-// In database queries
-where deleted_at = none          // → compiles to: WHERE deleted_at IS NULL
-where deleted_at != none         // → compiles to: WHERE deleted_at IS NOT NULL
-
-// Nullable columns become optional types
-table users {
-    deleted_at: DateTime nullable  // becomes DateTime? when queried
-}
+`none` represents absence. In queries:
 ```
-
-### Error Handling
-
-```covenant
-// Errors propagate automatically
-get_user(id: Int) -> User | DbError | NetworkError {
-    let data = fetch(id)     // NetworkError bubbles up
-    parse(data)              // returns User
-}
-
-// Use handle to catch errors locally
-get_user_safe(id: Int) -> User | DbError {
-    let data = fetch(id) handle {
-        NetworkError(e) => return DbError::from(e),
-    }
-    parse(data)
-}
-```
-
-### Bidirectional References
-
-The compiler computes and stores metadata on every symbol:
-
-```
-ast_metadata = {
-    called_by: [symbol_id],      // who calls this function
-    calls: [symbol_id],          // what this function calls
-    references: [symbol_id],     // types/symbols referenced
-    referenced_by: [symbol_id],  // what references this
-    effects: [effect_id],        // computed effect set
-}
-```
-
-Query it like any other data:
-```covenant
-// Find all callers of authenticate
-query project {
-    select * from functions where calls contains "authenticate"
-}
+where
+  equals field="deleted_at" lit=none    // → IS NULL
+end
 ```
 
 ### External Bindings
 
-```covenant
-// Wrap JS/npm libraries with typed effect declarations
-extern get(url: String) -> Response | HttpError
-    from "axios"
-    effect [network]
+```
+snippet id="http.get" kind="extern"
+
+effects
+  effect network
+end
+
+signature
+  fn name="get"
+    param name="url" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  contract="axios.get@1"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end
+```
+
+### Bidirectional References
+
+Compiler computes metadata on every symbol:
+```
+symbol_metadata = {
+    called_by: [symbol_id],
+    calls: [symbol_id],
+    references: [symbol_id],
+    referenced_by: [symbol_id],
+    effects: [effect_id],
+    tests: [test_id],
+    requirements: [req_id],
+}
 ```
 
 ---
@@ -166,4 +207,4 @@ extern get(url: String) -> Response | HttpError
 
 **Design phase.** No compiler exists yet.
 
-Current focus: finalize syntax, define AST, build parser.
+Current focus: finalize IR syntax, define AST schema, build parser.

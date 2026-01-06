@@ -1,239 +1,253 @@
-(* Covenant Grammar - EBNF *)
-(* This is the canonical, machine-parseable grammar definition *)
-(* Examples in /examples/*.cov should validate against this *)
+(* Covenant Grammar - Machine-First IR *)
+(* Optimized for LLM generation: deterministic, tree-shaped, keyword-heavy *)
+(* Every construct has an ID, canonical ordering, no operators *)
+
+(* === Design Principles === *)
+(*
+   1. Everything is a block with kind, id, and explicit end
+   2. No operators - use keywords: add, equals, and, or, not
+   3. No expression nesting - one operation per step, named outputs (SSA)
+   4. Strict canonical ordering - one valid way to write everything
+   5. ~40-50 keywords total - small grammar surface area
+   6. Double quotes only, // comments
+*)
 
 (* === Top Level === *)
-program        = { top_level } ;
-top_level      = module_import | declaration ;
-declaration    = module_decl | type_decl | fn_decl | extern_decl | database_decl ;
+program        = { snippet } ;
 
-(* === Module Imports === *)
-(* Module-level imports bring functions into scope for all functions in the file *)
-(* They also inherit the effects of the imported functions *)
-module_import  = "import" "{" ident_list "}" "from" IDENT ;
+snippet        = "snippet" snippet_header { section } "end" ;
+snippet_header = "id" "=" STRING "kind" "=" snippet_kind ;
+snippet_kind   = "fn" | "struct" | "enum" | "module" | "database" | "extern" | "test" ;
 
-(* === Modules === *)
-module_decl    = "module" IDENT "{" { declaration } "}" ;
+(* === Sections (in canonical order) === *)
+section        = effects_section
+               | requires_section
+               | types_section
+               | tools_section
+               | signature_section
+               | body_section
+               | tests_section
+               | metadata_section ;
 
-(* === Types === *)
-type_decl      = struct_decl | enum_decl | alias_decl ;
+(* === Effects Section === *)
+(* Declares capabilities this snippet requires *)
+effects_section = "effects" { effect_decl } "end" ;
+effect_decl     = "effect" IDENT [ effect_params ] ;
+effect_params   = "(" { effect_param } ")" ;
+effect_param    = IDENT "=" value ;
 
-struct_decl    = "struct" IDENT [ generic_params ] "{"
-                   { field_decl }
-                 "}" ;
+(* === Requirements Section === *)
+(* First-class specifications, queryable and linkable to tests *)
+requires_section = "requires" { requirement } "end" ;
+requirement      = "req" "id" "=" STRING { req_field } "end" ;
+req_field        = "text" STRING
+                 | "priority" ( "critical" | "high" | "medium" | "low" )
+                 | "status" ( "draft" | "approved" | "implemented" | "tested" ) ;
 
-enum_decl      = "enum" IDENT [ generic_params ] "{"
-                   { variant_decl }
-                 "}" ;
+(* === Types Section === *)
+(* Type definitions local to this snippet *)
+types_section  = "types" { type_def } "end" ;
+type_def       = struct_def | enum_def | alias_def ;
 
-alias_decl     = "type" IDENT [ generic_params ] "=" type ;
+struct_def     = "struct" "name" "=" STRING { struct_field } "end" ;
+struct_field   = "field" "name" "=" STRING "type" "=" type_ref [ field_attrs ] ;
+field_attrs    = { "optional" | "default" "=" value } ;
 
-field_decl     = IDENT ":" type [ "=" expr ] ;
-variant_decl   = IDENT [ "(" type_list ")" | "{" { field_decl } "}" ] ;
+enum_def       = "enum" "name" "=" STRING { enum_variant } "end" ;
+enum_variant   = "variant" "name" "=" STRING [ variant_data ] ;
+variant_data   = "(" type_list ")" | "{" { struct_field } "}" ;
 
-type           = union_type ;
-union_type     = base_type { "|" base_type } ;  (* union: User | Error *)
-base_type      = primary_type { type_suffix } ;
-type_suffix    = "?"                            (* optional *)
-               | "[" "]" ;                      (* list *)
-primary_type   = path
-               | "(" type_list ")"              (* tuple *)
-               | "(" type_list ")" "->" type    (* function type *)
-               | struct_type ;                  (* anonymous struct type *)
-struct_type    = "{" [ field_type_list ] "}" ;
-field_type_list = field_type { "," field_type } ;
-field_type     = IDENT ":" type ;
+alias_def      = "alias" "name" "=" STRING "type" "=" type_ref ;
 
-generic_params = "<" ident_list ">" ;
-path           = IDENT { "::" IDENT } ;
+(* === Tools Section === *)
+(* References to external tool contracts *)
+tools_section  = "tools" { tool_ref } "end" ;
+tool_ref       = "tool" "id" "=" STRING "contract" "=" STRING [ tool_attrs ] "end" ;
+tool_attrs     = { "idempotent" "=" IDENT
+                 | "timeout" "=" duration
+                 | "retry" "=" retry_spec
+                 | "auth" "=" STRING } ;
+retry_spec     = "(" "max" "=" NUMBER "backoff" "=" ( "none" | "linear" | "exponential" ) ")" ;
+duration       = NUMBER ( "ms" | "s" | "m" ) ;
 
-(* === Functions === *)
-(* No fn keyword - signature shape identifies functions *)
-(* Imports come after signature, before body - they declare effects *)
-fn_decl        = IDENT [ generic_params ]
-                 "(" [ param_list ] ")"
-                 [ "->" type ]
-                 { import_clause }
-                 [ ensures_clause ]
-                 block ;
+(* === Signature Section === *)
+(* Function, struct, or enum public interface *)
+signature_section = "signature" signature_body "end" ;
 
-import_clause  = "import" "{" ident_list "}" "from" IDENT ;
-ensures_clause = "ensures" ":" expr ;           (* postconditions *)
+signature_body = fn_signature | struct_signature | enum_signature ;
 
-(* === AST Metadata (Compiler-Computed, Not In Source) === *)
-(* These are computed by the compiler and stored in the AST/symbol graph *)
-(* Queryable via the project query interface *)
-(*
-ast_metadata   = {
-    // Bidirectional call graph
-    called_by: [symbol_id],      // functions that call this function
-    calls: [symbol_id],          // functions this function calls
+fn_signature   = "fn" "name" "=" STRING { fn_sig_part } "end" ;
+fn_sig_part    = param_decl | returns_decl | generic_decl ;
 
-    // Bidirectional reference graph
-    references: [symbol_id],     // types/symbols this function references
-    referenced_by: [symbol_id],  // what references this type/symbol
+param_decl     = "param" "name" "=" STRING "type" "=" type_ref [ param_attrs ] ;
+param_attrs    = { "optional" | "default" "=" value } ;
 
-    // Effect tracking
-    effects: [effect_id],        // computed effect set (transitive)
+returns_decl   = "returns" return_type "end" ;
+return_type    = "type" "=" type_ref [ "optional" ]
+               | "union" { union_member } ;
+union_member   = "type" "=" type_ref [ "optional" ] ;
 
-    // Statistical metadata (from tests/runtime, when available)
-    return_distribution: {       // observed return type frequencies
-        type: probability,       // e.g., { User: 0.99, NotFound: 0.01 }
-    },
-}
-*)
+generic_decl   = "generic" "name" "=" STRING [ "constraint" "=" type_ref ] ;
 
-param_list     = param { "," param } ;
-param          = IDENT ":" type ;
+struct_signature = "struct" "name" "=" STRING { struct_field } "end" ;
+enum_signature   = "enum" "name" "=" STRING { enum_variant } "end" ;
 
-(* === Extern Declarations (FFI Bindings) === *)
-(* Declares external functions provided by host runtime *)
-(* Maps npm/JS libraries to Covenant's type and effect system *)
-extern_decl    = "extern" IDENT "(" [ param_list ] ")" "->" type
-                 "from" STRING
-                 "effect" "[" ident_list "]" ;
+(* === Body Section === *)
+(* Implementation as a sequence of steps (SSA form) *)
+body_section   = "body" { step } "end" ;
 
-(* === Database Declarations === *)
-(* Typed database bindings - queries compile to SQL *)
-(* Schema is declared in Covenant, validated against actual database *)
-database_decl  = "database" IDENT
-                 [ "connection" ":" STRING ]
-                 "{" { table_decl } "}" ;
+step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
+step_kind      = "compute" | "call" | "query" | "bind" | "return"
+               | "if" | "match" | "for" | "insert" | "update" | "delete" ;
 
-table_decl     = "table" IDENT "{"
-                   { column_decl }
-                   { constraint_decl }
-                 "}" ;
+step_body      = compute_body | call_body | query_body | bind_body | return_body
+               | if_body | match_body | for_body
+               | insert_body | update_body | delete_body ;
 
-column_decl    = IDENT ":" column_type [ column_attrs ] ;
-column_type    = "Int" | "String" | "Bool" | "Float" | "DateTime" | "Bytes"
-               | IDENT ;                        (* foreign key reference *)
-column_attrs   = { "primary" | "unique" | "nullable" | "auto" } ;
+(* --- Compute: arithmetic and logic --- *)
+compute_body   = "op" "=" binary_op input input
+               | "op" "=" unary_op input ;
 
-constraint_decl = "unique" "(" ident_list ")"
-                | "index" "(" ident_list ")"
-                | "foreign" IDENT "->" path ;
+binary_op      = "add" | "sub" | "mul" | "div" | "mod"
+               | "equals" | "not_equals" | "less" | "greater" | "less_eq" | "greater_eq"
+               | "and" | "or"
+               | "concat" | "contains" ;
 
-(* === Query Expressions === *)
-(* Unified query syntax for all data sources *)
-(* The import type determines how the query compiles: *)
-(*   - database import → SQL *)
-(*   - meta import → AST traversal *)
-(*   - module path → scoped AST query *)
-query_expr     = "query" path "{" query_body "}" ;
+unary_op       = "not" | "neg" ;
 
-query_body     = select_clause
-                 [ from_clause ]
-                 [ join_clause ]
-                 [ where_clause ]
-                 [ order_clause ]
-                 [ limit_clause ] ;
+input          = "input" input_source ;
+input_source   = "var" "=" STRING
+               | "lit" "=" literal
+               | "field" "=" STRING "of" "=" STRING ;
 
-select_clause  = "select" select_items ;
-select_items   = "*" | select_item { "," select_item } ;
-select_item    = expr [ "as" IDENT ] ;
+(* --- Call: function or tool invocation --- *)
+call_body      = ( "fn" "=" STRING | "tool" "=" STRING ) { call_arg } [ error_handler ] ;
+call_arg       = "arg" "name" "=" STRING "from" "=" STRING ;
+error_handler  = "handle" { handle_case } "end" ;
+handle_case    = "case" "type" "=" type_ref { step } "end" ;
 
-from_clause    = "from" IDENT [ "as" IDENT ] ;
-join_clause    = { join_type "join" IDENT "on" expr } ;
+(* --- Query: database or AST traversal --- *)
+query_body     = "target" "=" STRING query_clauses ;
+query_clauses  = select_clause [ from_clause ] [ join_clause ] [ where_clause ]
+                 [ order_clause ] [ limit_clause ] ;
+
+select_clause  = "select" ( "all" | { select_item } ) ;
+select_item    = "field" "=" STRING [ "alias" "=" STRING ] ;
+
+from_clause    = "from" "=" STRING [ "alias" "=" STRING ] ;
+
+join_clause    = { "join" "type" "=" join_type "table" "=" STRING "on" condition "end" } ;
 join_type      = "inner" | "left" | "right" | "outer" ;
 
-where_clause   = "where" expr ;
-order_clause   = "order" "by" order_item { "," order_item } ;
-order_item     = expr [ "asc" | "desc" ] ;
-limit_clause   = "limit" expr [ "offset" expr ] ;
+where_clause   = "where" condition "end" ;
 
-(* === Mutation Expressions === *)
-(* For database: compile to INSERT/UPDATE/DELETE *)
-(* For project (AST): metaprogramming operations *)
-insert_expr    = "insert" "into" path struct_expr ;
-update_expr    = "update" path "set" field_init_list [ where_clause ] ;
-delete_expr    = "delete" "from" path [ where_clause ] ;
+condition      = simple_condition | compound_condition ;
+simple_condition = compare_op "field" "=" STRING ( "var" "=" STRING | "lit" "=" literal ) ;
+compare_op     = "equals" | "not_equals" | "less" | "greater" | "less_eq" | "greater_eq"
+               | "contains" | "matches" ;
+compound_condition = ( "and" | "or" ) { condition } "end"
+                   | "not" condition ;
 
-(* === Statements === *)
-block          = "{" { statement } "}" ;
+order_clause   = "order" { order_item } ;
+order_item     = "by" "=" STRING "dir" "=" ( "asc" | "desc" ) ;
 
-statement      = let_stmt
-               | return_stmt
-               | if_stmt
-               | match_stmt
-               | for_stmt
-               | expr_stmt ;
+limit_clause   = "limit" "=" NUMBER [ "offset" "=" NUMBER ] ;
 
-(* let uses = for initial binding, := for reassignment *)
-let_stmt       = "let" [ "mut" ] IDENT [ ":" type ] "=" expr ;
-return_stmt    = "return" [ expr ] ;
-expr_stmt      = expr ;
+(* --- Bind: variable binding --- *)
+bind_body      = [ "mut" ] "from" "=" STRING ;
 
-if_stmt        = "if" expr block [ "else" ( if_stmt | block ) ] ;
+(* --- Return --- *)
+return_body    = [ "from" "=" STRING ] ;
 
-match_stmt     = "match" expr "{" { match_arm } "}" ;
-match_arm      = pattern "=>" ( expr | block ) "," ;
+(* --- If --- *)
+if_body        = "condition" "=" STRING "then" { step } [ "else" { step } ] ;
 
-for_stmt       = "for" IDENT "in" expr block ;
+(* --- Match --- *)
+match_body     = "on" "=" STRING { match_case } ;
+match_case     = "case" pattern { step } "end" ;
 
-(* === Expressions === *)
-(* Note: = is equality (not ==), := is assignment *)
-(* This aligns with SQL and avoids the = vs == confusion *)
-(*
-   Null handling:
-   - 'none' represents absence of value (like Option::None)
-   - In queries: x = none compiles to SQL "x IS NULL"
-   - In queries: x != none compiles to SQL "x IS NOT NULL"
-   - Nullable columns become optional types (T?)
-*)
-expr           = assignment ;
-assignment     = IDENT ":=" expr | logical_or ;
-logical_or     = logical_and { "||" logical_and } ;
-logical_and    = equality { "&&" equality } ;
-equality       = comparison { ( "=" | "!=" ) comparison } ;
-comparison     = term { ( "<" | ">" | "<=" | ">=" ) term } ;
-term           = factor { ( "+" | "-" ) factor } ;
-factor         = unary { ( "*" | "/" | "%" ) unary } ;
-unary          = ( "!" | "-" ) unary | postfix ;
-postfix        = primary { call | index | field_access | handle_expr } ;
+pattern        = "wildcard"
+               | "binding" "=" STRING
+               | "literal" "=" literal
+               | "variant" "type" "=" STRING [ "bindings" "=" "(" { STRING } ")" ]
+               | "struct" "type" "=" STRING [ "fields" "=" "(" { STRING } ")" ] ;
 
-call           = "(" [ expr_list ] ")" ;
-index          = "[" expr "]" ;
-field_access   = "." IDENT ;
-handle_expr    = "handle" "{" { match_arm } "}" ;  (* catch errors locally *)
+(* --- For --- *)
+for_body       = "var" "=" STRING "in" "=" STRING { step } ;
 
-primary        = IDENT
-               | literal
-               | "(" expr ")"
-               | block_expr
-               | array_expr
-               | struct_expr
-               | closure
-               | query_expr
-               | insert_expr
-               | update_expr
-               | delete_expr ;
+(* --- Insert --- *)
+insert_body    = "into" "=" STRING { field_value } ;
+field_value    = "set" "field" "=" STRING "from" "=" STRING ;
 
-struct_expr    = [ path ] "{" [ field_init_list ] "}" ;
-field_init_list = field_init { "," field_init } ;
-field_init     = IDENT ":" expr
-               | IDENT ;                        (* shorthand: { name } same as { name: name } *)
+(* --- Update --- *)
+update_body    = "target" "=" STRING { field_value } [ where_clause ] ;
 
-block_expr     = block ;                        (* blocks are expressions *)
-array_expr     = "[" [ expr_list ] "]" ;
-closure        = "|" [ param_list ] "|" ( expr | block ) ;
+(* --- Delete --- *)
+delete_body    = "from" "=" STRING [ where_clause ] ;
 
-literal        = NUMBER | STRING | "true" | "false" | "none" ;
+(* === Tests Section === *)
+(* Test definitions linked to requirements *)
+tests_section  = "tests" { test_def } "end" ;
+test_def       = "test" "id" "=" STRING test_attrs { step } "end" ;
+test_attrs     = { "kind" "=" test_kind
+                 | "covers" "=" STRING
+                 | "property" "=" STRING } ;
+test_kind      = "unit" | "property" | "integration" | "golden" ;
 
-(* === Patterns (for match) === *)
-pattern        = "_"
-               | IDENT
-               | literal
-               | path "(" [ pattern_list ] ")"
-               | path "{" [ field_pattern_list ] "}" ;
+(* === Metadata Section === *)
+(* Additional metadata for AI planning *)
+metadata_section = "metadata" { meta_field } "end" ;
+meta_field     = "author" "=" STRING
+               | "created" "=" STRING
+               | "modified" "=" STRING
+               | "confidence" "=" NUMBER
+               | "provenance" "=" STRING
+               | "cost_hint" "=" ( "cheap" | "moderate" | "expensive" )
+               | "latency_hint" "=" ( "fast" | "medium" | "slow" ) ;
 
-(* === Lists === *)
-ident_list     = IDENT { "," IDENT } ;
-type_list      = type { "," type } ;
-expr_list      = expr { "," expr } ;
-pattern_list   = pattern { "," pattern } ;
+(* === Type References === *)
+type_ref       = type_path [ type_modifiers ] ;
+type_path      = IDENT { "::" IDENT } ;
+type_modifiers = { "?" | "[]" | "<" type_list ">" } ;
+type_list      = type_ref { "," type_ref } ;
+
+(* === Values and Literals === *)
+value          = literal | "var" "=" STRING ;
+literal        = NUMBER [ ":" type_ref ]
+               | STRING
+               | "true" | "false"
+               | "none"
+               | array_literal
+               | struct_literal ;
+
+array_literal  = "[" [ literal { "," literal } ] "]" ;
+struct_literal = "{" [ struct_field_lit { "," struct_field_lit } ] "}" ;
+struct_field_lit = STRING ":" literal ;
 
 (* === Tokens === *)
 IDENT          = letter { letter | digit | "_" } ;
 NUMBER         = digit { digit } [ "." digit { digit } ] ;
-STRING         = '"' { any_char } '"' ;
+STRING         = '"' { any_char_except_quote | escape_seq } '"' ;
+escape_seq     = "\\" ( '"' | "\\" | "n" | "t" | "r" ) ;
+
+(* === Comments === *)
+(* // single line comment *)
+COMMENT        = "//" { any_char_except_newline } NEWLINE ;
+
+(* === Reserved Keywords (canonical list) === *)
+(*
+   Blocks: snippet, end, effects, requires, types, tools, signature, body, tests, metadata
+   Types: struct, enum, alias, field, variant, fn, param, returns, union, generic, type
+   Effects: effect
+   Requirements: req, text, priority, status
+   Tools: tool, contract, idempotent, timeout, retry, auth
+   Steps: step, kind, as, op, input, var, lit, from, of
+   Operators: add, sub, mul, div, mod, equals, not_equals, less, greater, less_eq, greater_eq, and, or, not, neg, concat, contains, matches
+   Control: if, then, else, match, case, for, in, return, bind, mut
+   Query: query, target, select, all, from, join, inner, left, right, outer, on, where, order, by, dir, asc, desc, limit, offset
+   CRUD: insert, into, update, set, delete
+   Tests: test, covers, property, unit, integration, golden
+   Metadata: author, created, modified, confidence, provenance, cost_hint, latency_hint, cheap, moderate, expensive, fast, medium, slow
+   Literals: true, false, none
+   Modifiers: optional, default, constraint, handle, wildcard, binding, literal
+*)

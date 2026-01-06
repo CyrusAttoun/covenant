@@ -1,43 +1,204 @@
 // External Bindings (FFI)
 // Wrapping JavaScript/npm libraries with Covenant's type and effect system
 
-// HTTP client (axios)
-extern get(url: String) -> Response | HttpError
-    from "axios"
-    effect [network]
+snippet id="http.get" kind="extern"
 
-extern post(url: String, body: String) -> Response | HttpError
-    from "axios"
-    effect [network]
+effects
+  effect network
+end
 
-// Filesystem (Node fs)
-extern read_file(path: String) -> String | IoError
-    from "fs/promises"
-    effect [filesystem]
+signature
+  fn name="get"
+    param name="url" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
 
-extern write_file(path: String, content: String) -> () | IoError
-    from "fs/promises"
-    effect [filesystem]
+metadata
+  contract="axios.get@1"
+  cost_hint=moderate
+  latency_hint=slow
+end
 
-// Crypto (pure - no side effects)
-extern sha256(input: String) -> String
-    from "crypto"
-    effect []
+end
 
-extern random_bytes(length: Int) -> Bytes
-    from "crypto"
-    effect [random]
 
-// Console
-extern println(msg: String) -> ()
-    from "console"
-    effect [console]
+snippet id="http.post" kind="extern"
 
-// Database
-extern query(conn: Connection, sql: String) -> Rows | DbError
-    from "pg"
-    effect [database]
+effects
+  effect network
+end
 
-extern connect(url: String) -> Connection | DbError
-    from "pg"
-    effect [database]
+signature
+  fn name="post"
+    param name="url" type="String"
+    param name="body" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  contract="axios.post@1"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end
+
+
+snippet id="fs.read_file" kind="extern"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="read_file"
+    param name="path" type="String"
+    returns union
+      type="String"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  contract="fs/promises.readFile@1"
+end
+
+end
+
+
+snippet id="fs.write_file" kind="extern"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="write_file"
+    param name="path" type="String"
+    param name="content" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+metadata
+  contract="fs/promises.writeFile@1"
+end
+
+end
+
+
+snippet id="crypto.sha256" kind="extern"
+
+// Pure - no effects
+
+signature
+  fn name="sha256"
+    param name="input" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  contract="crypto.createHash@1"
+end
+
+end
+
+
+snippet id="crypto.random_bytes" kind="extern"
+
+effects
+  effect random
+end
+
+signature
+  fn name="random_bytes"
+    param name="length" type="Int"
+    returns type="Bytes"
+  end
+end
+
+metadata
+  contract="crypto.randomBytes@1"
+end
+
+end
+
+
+snippet id="console.println" kind="extern"
+
+effects
+  effect console
+end
+
+signature
+  fn name="println"
+    param name="msg" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  contract="console.log@1"
+end
+
+end
+
+
+snippet id="db.query" kind="extern"
+
+effects
+  effect database
+end
+
+signature
+  fn name="query"
+    param name="conn" type="Connection"
+    param name="sql" type="String"
+    returns union
+      type="Rows"
+      type="DbError"
+    end
+  end
+end
+
+metadata
+  contract="pg.query@1"
+end
+
+end
+
+
+snippet id="db.connect" kind="extern"
+
+effects
+  effect database
+end
+
+signature
+  fn name="connect"
+    param name="url" type="String"
+    returns union
+      type="Connection"
+      type="DbError"
+    end
+  end
+end
+
+metadata
+  contract="pg.connect@1"
+end
+
+end

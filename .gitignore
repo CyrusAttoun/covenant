@@ -9,8 +9,11 @@
 .DS_Store
 Thumbs.db
 
-# Build outputs (when compiler exists)
+# Rust build outputs
 /target/
+Cargo.lock
+
+# WASM outputs
 *.wasm
 *.wat
 

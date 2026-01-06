@@ -1,0 +1,9 @@
+[package]
+name = "covenant-graph"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+covenant-ast = { workspace = true }
+covenant-checker = { workspace = true }
+serde = { workspace = true }

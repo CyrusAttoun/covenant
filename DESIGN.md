@@ -1,29 +1,32 @@
 # Covenant: Design Philosophy
 
 > **Natural language is for requesting.**
-> **Source code is for meaning.**
-> **AST is for tooling.**
-> **Bytecode is for execution.**
+> **IR is for meaning.** *(machine-readable, canonical)*
+> **Symbol graph is for querying.** *(derived, bidirectional)*
+> **Bytecode is for execution.** *(WASM, sandboxed)*
 
 ---
 
-## 1. Why Covenant Exists
+## 1. Why Machine-First
 
 AI coding agents struggle with traditional codebases:
 
 - They parse **text**, not meaning
 - They **search and guess** instead of query
-- Tool use is **probabilistic**, not contractual
-- Each task starts from scratch—no compounding benefit
-- Reliability degrades as projects grow
+- Generation is **probabilistic** — syntax variations increase entropy
+- Each task starts from scratch — no compounding benefit
 
-The root cause: **existing languages optimize for human authorship, not machine comprehension.**
+The root cause: **existing languages optimize for human authorship, not machine comprehension or generation.**
 
-Covenant is a coordination language with a contract-first type system. The value is not in the syntax. The value is in:
+Covenant is a machine-first intermediate representation. The value is not in the syntax. The value is in:
 
-1. **Tool contracts** — typed interfaces for external capabilities
-2. **Queryable structure** — AST that tooling and AI can efficiently navigate
-3. **Compounding clarity** — each feature written makes the next easier
+1. **Deterministic generation** — one canonical way to write everything
+2. **Queryable structure** — every symbol has an ID, relationships are explicit
+3. **Explicit effects** — capabilities and side effects declared per-snippet
+4. **Requirements linkage** — specs and tests are first-class nodes
+5. **Token stability** — small grammar, predictable sequences
+
+Human-readable views can be derived. The IR is the source of truth.
 
 ---
 
@@ -32,216 +35,438 @@ Covenant is a coordination language with a contract-first type system. The value
 ### 2.1 Natural Language — *Requesting*
 Ephemeral. Ambiguous by nature. Human-to-AI communication only. Discarded after translation.
 
-### 2.2 Source Code — *The Artifact*
-Human-readable and human-writable. Heavily typed, minimal syntax. Encodes intent, contracts, and constraints. The permanent project asset.
+### 2.2 IR (Intermediate Representation) — *The Artifact*
+Machine-readable source of truth. Deterministic, tree-shaped, keyword-heavy. Every construct has an ID. Canonical formatting — one way to write everything.
 
-### 2.3 AST — *Tooling & AI Interface*
-Derived from source. Queryable symbol graph with bidirectional references. Lossless round-trip to source. What AI agents operate against.
+### 2.3 Symbol Graph — *Queryable Structure*
+Derived from IR by the compiler. Bidirectional references (`called_by`, `calls`, `references`, `referenced_by`). Effect closure computed transitively. Requirements and tests linked to implementations.
 
 ### 2.4 Bytecode — *Execution*
 WASM target. Deterministic. Sandboxed and capability-constrained. Metered execution.
 
 ---
 
-## 3. Core Design Decisions
+## 3. Core Design Principles
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Equality operator | `=` (not `==`) | Aligns with SQL, avoids confusion |
-| Assignment operator | `:=` | Distinct from equality |
-| Effect declaration | Function-level imports | Imports *are* the effect declaration |
-| Effect propagation | Transitive via imports | Importing a function imports its effects |
-| Function keyword | None | Signature shape identifies functions |
-| Error handling | Union returns + auto-propagation | Errors bubble up; use `handle` to catch |
-| Null handling | `none` everywhere | `x = none` compiles to `IS NULL` in queries |
-| Optional types | `?` suffix | `User?` instead of `Option<User>` |
-| List syntax | `[]` suffix | `User[]` instead of `List<User>` |
-| Query syntax | SQL-like, unified | Same syntax for databases and source code |
-| Bidirectional refs | Compiler-computed | Every function knows its callers |
-| Macros | None | Predictable for AI |
-
-See [grammar.ebnf](grammar.ebnf) for the formal syntax definition.
-See [examples/](examples/) for validated source code.
+| Principle | Implementation |
+|-----------|----------------|
+| **Deterministic structure** | Everything is a block with `snippet`, `id`, and `end` |
+| **No operators** | Keywords only: `add`, `equals`, `and`, `or`, `not` |
+| **No expression nesting** | One operation per step, named outputs (SSA form) |
+| **Canonical ordering** | Fields appear in fixed order within each block type |
+| **Small grammar** | ~50 keywords, no synonyms, no optional punctuation |
+| **Every node has an ID** | Enables precise queries and references |
+| **Effects explicit** | Declared in `effects` section, propagated transitively |
+| **Requirements first-class** | `requires` section links specs to code |
+| **Tests linked** | `tests` section declares coverage |
 
 ---
 
-## 4. Imports as Effects
+## 4. Syntax Overview
 
-Most computation happens in **external tools**—other languages, APIs, system utilities, sandboxed runtimes.
+### 4.1 Snippet Structure
 
-Effects are declared via **imports**. Function-level imports scope capabilities precisely:
+Every code unit is a `snippet` with explicit sections:
 
-```covenant
-// Effectful — imports database capability
-get_user(id: Int) -> User | DbError
-    import { app_db } from database
-{
-    query app_db {
-        select * from users where id = id limit 1
-    }
-}
+```
+snippet id="module.function_name" kind="fn"
 
-// Pure — no imports, no effects
-validate_email(email: String) -> Bool {
-    email.contains("@") && email.len() > 3
-}
+effects
+  effect database
+  effect network
+end
+
+requires
+  req id="R-001"
+    text "Users must be retrievable by ID"
+    priority high
+  end
+end
+
+signature
+  fn name="get_user"
+    param name="id" type="Int"
+    returns union
+      type="User" optional
+      type="DbError"
+    end
+  end
+end
+
+body
+  // implementation steps
+end
+
+tests
+  test id="T-001" kind="unit" covers="R-001"
+    // test steps
+  end
+end
+
+end
 ```
 
-**Key principles:**
-- **Imports are effects** — `import { app_db } from database` brings the `[database]` capability into scope
-- **Function-level granularity** — each function declares exactly what it needs
-- **Transitive propagation** — importing a function imports its effects
+### 4.2 Operations (No Operators)
+
+All operations use keywords, not symbols:
+
+| Instead of | Use |
+|------------|-----|
+| `x + y` | `op=add input var="x" input var="y"` |
+| `x == y` | `op=equals input var="x" input var="y"` |
+| `x && y` | `op=and input var="x" input var="y"` |
+| `!x` | `op=not input var="x"` |
+| `-x` | `op=neg input var="x"` |
+
+### 4.3 SSA Form (Named Outputs)
+
+Every step produces a named output. No expression nesting:
+
+```
+body
+  step id="s1" kind="compute"
+    op=mul
+    input var="x"
+    input lit=2
+    as="doubled"
+  end
+
+  step id="s2" kind="compute"
+    op=add
+    input var="doubled"
+    input lit=1
+    as="result"
+  end
+
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+```
+
+### 4.4 Function Calls
+
+```
+step id="s1" kind="call"
+  fn="validate_email"
+  arg name="email" from="user.email"
+  as="is_valid"
+end
+```
+
+### 4.5 Tool Calls (External Effects)
+
+```
+tools
+  tool id="t1" contract="payments.charge@1"
+    idempotent=key
+    timeout=30s
+    retry=(max=3 backoff=exponential)
+  end
+end
+
+body
+  step id="s1" kind="call"
+    tool="t1"
+    arg name="amount" from="total"
+    arg name="key" from="idempotency_key"
+    as="charge_result"
+  end
+end
+```
 
 ---
 
-## 5. Unified Query System
+## 5. Query System
 
-Covenant uses SQL-like syntax for querying **all data sources**. The import type determines how the query compiles.
+### 5.1 Unified Query Syntax
 
-### Database Queries (compile to SQL)
+Same syntax for database queries and AST/project queries. The `target` determines compilation:
 
-```covenant
-get_active_users() -> User[] | DbError
-    import { app_db } from database
-{
-    query app_db {
-        select * from users where is_active = true order by name
-    }
-}
+```
+// Database query (compiles to SQL)
+step id="s1" kind="query"
+  target="app_db"
+  select all
+  from="users"
+  where
+    equals field="id" var="user_id"
+  end
+  limit=1
+  as="user"
+end
+
+// Project query (compiles to AST traversal)
+step id="s1" kind="query"
+  target="project"
+  select all
+  from="functions"
+  where
+    contains field="effects" lit="database"
+  end
+  as="db_functions"
+end
 ```
 
-### Project Queries (compile to AST traversal)
+### 5.2 CRUD Operations
 
-```covenant
-find_db_functions() -> FunctionInfo[]
-    import { project } from meta
-{
-    query project {
-        select * from functions where effects contains "database"
-    }
-}
+```
+// Insert
+step id="s1" kind="insert"
+  into="app_db.users"
+  set field="name" from="name"
+  set field="email" from="email"
+  as="new_user"
+end
+
+// Update
+step id="s2" kind="update"
+  target="app_db.users"
+  set field="is_active" from="false"
+  where
+    less field="last_login" var="cutoff_date"
+  end
+  as="updated_count"
+end
+
+// Delete
+step id="s3" kind="delete"
+  from="app_db.users"
+  where
+    equals field="id" var="user_id"
+  end
+  as="deleted"
+end
 ```
 
-### CRUD Operations
+### 5.3 Null Handling
 
-Same syntax for both targets:
+`none` represents absence. In queries:
 
-```covenant
-// Database
-insert into app_db.users { name, email, created_at: now() }
-update app_db.users set is_active: false where last_login < days_ago(30)
-delete from app_db.users where id = user_id
-
-// Source code (AST mutations)
-insert into project.functions { name: "new_fn", module: "auth", ... }
-update project.functions set name: "new_name" where name = "old_name"
-delete from project.functions where called_by = [] and is_exported = false
 ```
+where
+  equals field="deleted_at" lit=none    // → IS NULL
+end
 
-### Null Handling
-
-`none` represents absence of value. In queries, it maps to SQL NULL:
-
-```covenant
-where deleted_at = none      // → WHERE deleted_at IS NULL
-where deleted_at != none     // → WHERE deleted_at IS NOT NULL
+where
+  not_equals field="deleted_at" lit=none  // → IS NOT NULL
+end
 ```
 
 ---
 
-## 6. Bidirectional References
+## 6. Effects System
 
-The compiler computes metadata on every symbol during type-checking:
+### 6.1 Declaration
+
+Effects are declared per-snippet:
 
 ```
-ast_metadata = {
-    called_by: [symbol_id],      // functions that call this function
-    calls: [symbol_id],          // functions this function calls
+effects
+  effect database
+  effect network
+  effect filesystem(path="/data")
+end
+```
+
+### 6.2 Propagation
+
+Effects propagate transitively. If snippet A calls snippet B, A inherits B's effects. The compiler computes the full effect closure.
+
+### 6.3 Pure Functions
+
+A snippet with no `effects` section (or empty effects) is pure:
+
+```
+snippet id="math.double" kind="fn"
+
+signature
+  fn name="double"
+    param name="x" type="Int"
+    returns type="Int"
+  end
+end
+
+body
+  step id="s1" kind="compute"
+    op=mul
+    input var="x"
+    input lit=2
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+```
+
+The compiler verifies that pure snippets call nothing with effects.
+
+---
+
+## 7. Requirements and Tests
+
+### 7.1 Requirements as Nodes
+
+Requirements are first-class, queryable nodes:
+
+```
+requires
+  req id="R-AUTH-001"
+    text "Users must authenticate before accessing protected resources"
+    priority critical
+    status approved
+  end
+
+  req id="R-AUTH-002"
+    text "Failed login attempts must be rate-limited"
+    priority high
+    status implemented
+  end
+end
+```
+
+### 7.2 Test Coverage Linkage
+
+Tests declare which requirements they cover:
+
+```
+tests
+  test id="T-AUTH-001" kind="integration" covers="R-AUTH-001"
+    // test implementation
+  end
+
+  test id="T-AUTH-002" kind="property" covers="R-AUTH-002"
+    property="rate limit enforced after 5 failures"
+  end
+end
+```
+
+### 7.3 Queryable
+
+The symbol graph enables queries like:
+
+```
+// Find requirements without tests
+query target="project"
+  select all
+  from="requirements"
+  where
+    equals field="covered_by" lit=[]
+  end
+end
+
+// Find tests affected by changing a symbol
+query target="project"
+  select all
+  from="tests"
+  where
+    contains field="depends_on" var="symbol_id"
+  end
+end
+```
+
+---
+
+## 8. Bidirectional References
+
+The compiler computes metadata on every symbol:
+
+```
+symbol_metadata = {
+    id: symbol_id,
+    called_by: [symbol_id],      // functions that call this
+    calls: [symbol_id],          // functions this calls
     references: [symbol_id],     // types/symbols this references
     referenced_by: [symbol_id],  // what references this
-    effects: [effect_id],        // computed effect set (transitive)
+    effects: [effect_id],        // computed effect closure
+    tests: [test_id],            // tests that cover this
+    requirements: [req_id],      // requirements this implements
 }
 ```
 
-This enables queries like:
+Query it like any other data:
 
-```covenant
-// Find all callers of authenticate (no grep required)
-query project {
-    select * from functions where calls contains "authenticate"
-}
+```
+// Find all callers of authenticate
+query target="project"
+  select field="called_by"
+  from="functions"
+  where
+    equals field="name" lit="authenticate"
+  end
+end
 
 // Find unused code
-query project {
-    select * from functions
-    where called_by = []
-      and is_exported = false
-      and is_entry_point = false
-}
+query target="project"
+  select all
+  from="functions"
+  where
+    and
+      equals field="called_by" lit=[]
+      equals field="is_exported" lit=false
+      equals field="is_entry_point" lit=false
+    end
+  end
+end
 ```
 
 ---
 
-## 7. External Bindings (FFI)
+## 9. Tool Contracts
 
-Covenant accesses the JavaScript/npm ecosystem via **extern declarations**:
+### 9.1 External Bindings
 
-```covenant
-extern get(url: String) -> Response | HttpError
-    from "axios"
-    effect [network]
+```
+snippet id="http.get" kind="extern"
+
+effects
+  effect network
+end
+
+signature
+  fn name="get"
+    param name="url" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  contract="axios.get@1"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end
 ```
 
-Architecture:
+### 9.2 Operational Metadata
+
+Tools can declare execution hints:
+
 ```
-┌─────────────────────────────────┐
-│  Covenant (.cov)                │  ← Effect-tracked, type-safe
-├─────────────────────────────────┤
-│  Extern Bindings                │  ← Thin typed wrappers
-├─────────────────────────────────┤
-│  Host Runtime (JS/Node)         │  ← Provides implementations
-├─────────────────────────────────┤
-│  npm Libraries                  │  ← The ecosystem
-└─────────────────────────────────┘
+tools
+  tool id="t1" contract="payments.charge@1"
+    idempotent=idempotency_key   // which arg provides idempotency
+    timeout=30s
+    retry=(max=3 backoff=exponential)
+    auth="payments:write"
+  end
+end
 ```
+
+This enables AI planning — knowing a call is idempotent, slow, or requires specific permissions.
 
 ---
 
-## 8. Database Modules
-
-Typed database schemas that compile queries to SQL:
-
-```covenant
-database app_db
-    connection: "postgres://localhost:5432/myapp"
-{
-    table users {
-        id: Int primary auto
-        email: String unique
-        name: String
-        deleted_at: DateTime nullable  // becomes DateTime? in queries
-
-        index(email)
-    }
-
-    table posts {
-        id: Int primary auto
-        author_id: Int
-        title: String
-
-        foreign author_id -> users
-    }
-}
-```
-
-The compiler:
-1. Type-checks queries against the declared schema
-2. Generates parameterized SQL (no injection possible)
-3. Maps result rows to Covenant types
-
----
-
-## 9. WASM Compilation
+## 10. WASM Compilation
 
 ### Target Runtime
 - **Sandboxed execution** — memory-safe by default
@@ -252,51 +477,64 @@ The compiler:
 
 ### Compilation Pipeline
 ```
-Covenant Source (.cov)
-       ↓
-    Parser
-       ↓
-    AST (queryable, round-trippable, bidirectional refs)
-       ↓
-    Type Checker (capabilities, effects, contracts)
-       ↓
-    IR Generation
-       ↓
-    WASM Emitter
-       ↓
-    .wasm Module
+IR (source)
+    ↓
+  Parser
+    ↓
+  Symbol Graph (queryable, bidirectional refs)
+    ↓
+  Type Checker (effects, capabilities)
+    ↓
+  IR Optimizer
+    ↓
+  WASM Emitter
+    ↓
+  .wasm Module
 ```
 
 ---
 
-## 10. What This Is and Isn't
+## 11. Human-Readable Views (Future)
+
+The IR is the source of truth. Human-readable views are derived:
+
+| View | Purpose |
+|------|---------|
+| **Pretty print** | Compact syntax for code review |
+| **Diff view** | Semantic diff, not textual |
+| **Graph view** | Visual call graph, dependency graph |
+| **Summary view** | Natural language description |
+
+These are display transformations, not source formats. The IR remains canonical.
+
+---
+
+## 12. What This Is and Isn't
 
 **Is:**
-- A general-purpose programming language
-- A coordination language at heart
-- A contract-first type system
-- A machine-comprehensible project format
-- A unified query interface for data and code
+- A machine-first intermediate representation
+- A queryable project format
+- An effect-tracked, capability-constrained language
+- Optimized for LLM generation and navigation
 
 **Is Not:**
 - A replacement for all languages
 - A natural-language programming system
-- An AI that writes perfect code
+- Designed for human hand-authoring (though possible)
 
 ---
 
-## 11. North Star
+## 13. North Star
 
-> **Humans write contracts.**
-> **AI navigates structure.**
-> **Tools do the work.**
-> **Every line makes the next easier.**
+> **AI generates canonical IR.**
+> **Compilers derive queryable graphs.**
+> **Tools execute with explicit capabilities.**
+> **Every node is addressable, every relationship explicit.**
 
 ---
 
 ## Related Documents
 
 - [grammar.ebnf](grammar.ebnf) — Formal syntax definition
-- [prior-art.md](prior-art.md) — Lessons from Austral and Koka
-- [examples/](examples/) — Validated example programs
-- [plans/bidirectional-refs-and-queries.md](plans/bidirectional-refs-and-queries.md) — Query system design
+- [prior-art.md](prior-art.md) — Lessons from Austral, Koka, and LLM-native design
+- [examples/](examples/) — Example programs in IR syntax

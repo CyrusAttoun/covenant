@@ -1,28 +1,92 @@
 // Database Access - typed queries
 
-struct User {
-    id: Int,
-    name: String,
-    email: String,
-}
+snippet id="db.User" kind="struct"
 
-get_user_by_id(id: Int) -> User? | DbError
-    import { app_db } from database
-{
-    query app_db {
-        select * from users where id = id limit 1
-    }
-}
+signature
+  struct name="User"
+    field name="id" type="Int"
+    field name="name" type="String"
+    field name="email" type="String"
+  end
+end
 
-create_user(name: String, email: String) -> User | DbError
-    import { app_db } from database
-{
-    insert into app_db.users {
-        name: name,
-        email: email,
-    }
+end
 
-    query app_db {
-        select * from users where email = email limit 1
-    }
-}
+
+snippet id="db.get_user_by_id" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="get_user_by_id"
+    param name="id" type="Int"
+    returns union
+      type="User" optional
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="app_db"
+    select all
+    from="users"
+    where
+      equals field="id" var="id"
+    end
+    limit=1
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="db.create_user" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="create_user"
+    param name="name" type="String"
+    param name="email" type="String"
+    returns union
+      type="User"
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="insert"
+    into="app_db.users"
+    set field="name" from="name"
+    set field="email" from="email"
+    as="_"
+  end
+  step id="s2" kind="query"
+    target="app_db"
+    select all
+    from="users"
+    where
+      equals field="email" var="email"
+    end
+    limit=1
+    as="result"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end

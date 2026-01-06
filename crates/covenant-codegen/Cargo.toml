@@ -1,0 +1,10 @@
+[package]
+name = "covenant-codegen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+covenant-ast = { workspace = true }
+covenant-checker = { workspace = true }
+wasm-encoder = { workspace = true }
+thiserror = { workspace = true }

@@ -1,35 +1,173 @@
 // HTTP Server - separating pure routing from effectful I/O
 
-struct Request {
-    method: String,
-    path: String,
-    headers: Map<String, String>,
-    body: String,
-}
+snippet id="http.Request" kind="struct"
 
-struct Response {
-    status: Int,
-    body: String,
-}
+signature
+  struct name="Request"
+    field name="method" type="String"
+    field name="path" type="String"
+    field name="headers" type="Map<String, String>"
+    field name="body" type="String"
+  end
+end
 
-// Pure routing logic - no imports needed
-handle_request(req: Request) -> Response {
-    match (req.method, req.path) {
-        ("GET", "/") => Response { status: 200, body: "Hello!" },
-        ("GET", "/health") => Response { status: 200, body: "OK" },
-        _ => Response { status: 404, body: "Not Found" },
-    }
-}
+end
 
-main() -> () | IoError
-    import { listen, respond } from http_server
-    import { println } from console
-{
-    let server = listen(8080)
-    println("Listening on :8080")
 
-    for req in server.requests() {
-        let response = handle_request(req)  // pure
-        respond(req, response)               // effectful
-    }
-}
+snippet id="http.Response" kind="struct"
+
+signature
+  struct name="Response"
+    field name="status" type="Int"
+    field name="body" type="String"
+  end
+end
+
+end
+
+
+snippet id="http.handle_request" kind="fn"
+
+// Pure routing logic - no effects needed
+
+signature
+  fn name="handle_request"
+    param name="req" type="Request"
+    returns type="Response"
+  end
+end
+
+body
+  // Extract method and path
+  step id="s1" kind="bind"
+    field="method" of="req"
+    as="method"
+  end
+  step id="s2" kind="bind"
+    field="path" of="req"
+    as="path"
+  end
+
+  // Check for GET /
+  step id="s3" kind="compute"
+    op=equals
+    input var="method"
+    input lit="GET"
+    as="is_get"
+  end
+  step id="s4" kind="compute"
+    op=equals
+    input var="path"
+    input lit="/"
+    as="is_root"
+  end
+  step id="s5" kind="compute"
+    op=and
+    input var="is_get"
+    input var="is_root"
+    as="is_home"
+  end
+  step id="s6" kind="if"
+    condition="is_home"
+    then
+      step id="s6a" kind="return"
+        struct type="Response"
+          field name="status" lit=200
+          field name="body" lit="Hello!"
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
+
+  // Check for GET /health
+  step id="s7" kind="compute"
+    op=equals
+    input var="path"
+    input lit="/health"
+    as="is_health"
+  end
+  step id="s8" kind="compute"
+    op=and
+    input var="is_get"
+    input var="is_health"
+    as="is_health_check"
+  end
+  step id="s9" kind="if"
+    condition="is_health_check"
+    then
+      step id="s9a" kind="return"
+        struct type="Response"
+          field name="status" lit=200
+          field name="body" lit="OK"
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
+
+  // Default 404
+  step id="s10" kind="return"
+    struct type="Response"
+      field name="status" lit=404
+      field name="body" lit="Not Found"
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="http.main" kind="fn"
+
+effects
+  effect http_server
+  effect console
+end
+
+signature
+  fn name="main"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="listen"
+    arg name="port" lit=8080
+    as="server"
+  end
+  step id="s2" kind="call"
+    fn="println"
+    arg name="message" lit="Listening on :8080"
+    as="_"
+  end
+  step id="s3" kind="call"
+    fn="requests"
+    arg name="server" from="server"
+    as="request_stream"
+  end
+  step id="s4" kind="for"
+    var="req" in="request_stream"
+    step id="s4a" kind="call"
+      fn="handle_request"
+      arg name="req" from="req"
+      as="response"
+    end
+    step id="s4b" kind="call"
+      fn="respond"
+      arg name="req" from="req"
+      arg name="response" from="response"
+      as="_"
+    end
+    as="_"
+  end
+end
+
+end

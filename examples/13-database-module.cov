@@ -1,64 +1,165 @@
 // Database Module - typed schema declaration
 
-database app_db
-    connection: "postgres://localhost:5432/myapp"
-{
-    table users {
-        id: Int primary auto
-        email: String unique
-        name: String
-        created_at: DateTime
-        deleted_at: DateTime nullable  // becomes DateTime? in queries
+snippet id="app.database" kind="database"
 
-        index(email)
-    }
+metadata
+  connection="postgres://localhost:5432/myapp"
+end
 
-    table posts {
-        id: Int primary auto
-        author_id: Int
-        title: String
-        body: String
-        published: Bool
+types
+  struct name="users"
+    field name="id" type="Int" primary auto
+    field name="email" type="String" unique
+    field name="name" type="String"
+    field name="created_at" type="DateTime"
+    field name="deleted_at" type="DateTime" optional
+  end
 
-        foreign author_id -> users
-    }
-}
+  struct name="posts"
+    field name="id" type="Int" primary auto
+    field name="author_id" type="Int"
+    field name="title" type="String"
+    field name="body" type="String"
+    field name="published" type="Bool"
+  end
+end
 
-// Queries compile to SQL
-get_active_users() -> User[] | DbError
-    import { app_db } from database
-{
-    query app_db {
-        select * from users
-        where deleted_at = none  // compiles to: WHERE deleted_at IS NULL
-        order by name
-    }
-}
+end
 
-// CRUD operations
-create_post(author_id: Int, title: String, body: String) -> Post | DbError
-    import { app_db } from database
-{
-    insert into app_db.posts {
-        author_id: author_id,
-        title: title,
-        body: body,
-        published: false,
-    }
-}
 
-publish_post(post_id: Int) -> () | DbError
-    import { app_db } from database
-{
-    update app_db.posts
-    set published: true
-    where id = post_id
-}
+snippet id="app.get_active_users" kind="fn"
 
-delete_old_drafts(days: Int) -> () | DbError
-    import { app_db } from database
-{
-    delete from app_db.posts
-    where published = false
-      and created_at < days_ago(days)
-}
+effects
+  effect database
+end
+
+signature
+  fn name="get_active_users"
+    returns union
+      type="User[]"
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="app_db"
+    select all
+    from="users"
+    where
+      equals field="deleted_at" lit=none
+    end
+    order by="name" dir=asc
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="app.create_post" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="create_post"
+    param name="author_id" type="Int"
+    param name="title" type="String"
+    param name="body" type="String"
+    returns union
+      type="Post"
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="insert"
+    into="app_db.posts"
+    set field="author_id" from="author_id"
+    set field="title" from="title"
+    set field="body" from="body"
+    set field="published" lit=false
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="app.publish_post" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="publish_post"
+    param name="post_id" type="Int"
+    returns union
+      type="Unit"
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="update"
+    target="app_db.posts"
+    set field="published" lit=true
+    where
+      equals field="id" var="post_id"
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="app.delete_old_drafts" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="delete_old_drafts"
+    param name="days" type="Int"
+    returns union
+      type="Unit"
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="days_ago"
+    arg name="n" from="days"
+    as="cutoff"
+  end
+  step id="s2" kind="delete"
+    from="app_db.posts"
+    where
+      and
+        equals field="published" lit=false
+        less field="created_at" var="cutoff"
+      end
+    end
+    as="_"
+  end
+end
+
+end

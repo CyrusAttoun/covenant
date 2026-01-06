@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/covenant-ast",
+    "crates/covenant-lexer",
+    "crates/covenant-parser",
+    "crates/covenant-checker",
+    "crates/covenant-graph",
+    "crates/covenant-codegen",
+    "crates/covenant-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/anthropics/covenant"
+
+[workspace.dependencies]
+# Internal crates
+covenant-ast = { path = "crates/covenant-ast" }
+covenant-lexer = { path = "crates/covenant-lexer" }
+covenant-parser = { path = "crates/covenant-parser" }
+covenant-checker = { path = "crates/covenant-checker" }
+covenant-graph = { path = "crates/covenant-graph" }
+covenant-codegen = { path = "crates/covenant-codegen" }
+
+# External dependencies
+logos = "0.14"
+ariadne = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+wasm-encoder = "0.201"
+wasmtime = "19"
+rustyline = "14"
+clap = { version = "4", features = ["derive"] }
+thiserror = "1.0"

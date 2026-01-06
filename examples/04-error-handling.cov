@@ -1,51 +1,194 @@
-// Error Handling - union returns and handle keyword
+// Error Handling - union returns and handle blocks
 
-enum ParseError {
-    InvalidFormat(String),
-    MissingField(String),
-    OutOfRange { field: String, value: Int },
-}
+snippet id="config.ParseError" kind="enum"
 
-struct Config {
-    host: String,
-    port: Int,
-    debug: Bool,
-}
+signature
+  enum name="ParseError"
+    variant name="InvalidFormat"
+      field name="message" type="String"
+    end
+    variant name="MissingField"
+      field name="name" type="String"
+    end
+    variant name="OutOfRange"
+      field name="field" type="String"
+      field name="value" type="Int"
+    end
+  end
+end
+
+end
+
+
+snippet id="config.Config" kind="struct"
+
+signature
+  struct name="Config"
+    field name="host" type="String"
+    field name="port" type="Int"
+    field name="debug" type="Bool"
+  end
+end
+
+end
+
+
+snippet id="config.parse" kind="fn"
 
 // Pure function - can still return errors for validation
-parse_config(input: String) -> Config | ParseError {
-    let lines = input.split("\n")
 
-    let host = lines.find(|l| l.starts_with("host="))
-        .map(|l| l.strip_prefix("host="))
-        .ok_or(ParseError::MissingField("host"))
+signature
+  fn name="parse_config"
+    param name="input" type="String"
+    returns union
+      type="Config"
+      type="ParseError"
+    end
+  end
+end
 
-    let host = host handle {
-        ParseError(e) => return e,
-    }
+body
+  // Find host line
+  step id="s1" kind="call"
+    fn="find_config_line"
+    arg name="input" from="input"
+    arg name="prefix" lit="host="
+    as="host_result"
+  end
+  step id="s2" kind="match"
+    on="host_result"
+    case variant type="Some" bindings=("value")
+      step id="s2a" kind="bind"
+        from="value"
+        as="host"
+      end
+    end
+    case variant type="None"
+      step id="s2b" kind="return"
+        variant type="ParseError::MissingField"
+          field name="name" lit="host"
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
 
-    let port_str = lines.find(|l| l.starts_with("port="))
-        .map(|l| l.strip_prefix("port="))
-        .ok_or(ParseError::MissingField("port"))
+  // Find port line
+  step id="s3" kind="call"
+    fn="find_config_line"
+    arg name="input" from="input"
+    arg name="prefix" lit="port="
+    as="port_str_result"
+  end
+  step id="s4" kind="match"
+    on="port_str_result"
+    case variant type="Some" bindings=("value")
+      step id="s4a" kind="bind"
+        from="value"
+        as="port_str"
+      end
+    end
+    case variant type="None"
+      step id="s4b" kind="return"
+        variant type="ParseError::MissingField"
+          field name="name" lit="port"
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
 
-    let port_str = port_str handle {
-        ParseError(e) => return e,
-    }
+  // Parse port as int
+  step id="s5" kind="call"
+    fn="parse_int"
+    arg name="s" from="port_str"
+    as="port_parse_result"
+    handle
+      case type="ParseIntError"
+        step id="s5a" kind="return"
+          variant type="ParseError::InvalidFormat"
+            field name="message" lit="port must be a number"
+          end
+          as="_"
+        end
+      end
+    end
+  end
+  step id="s6" kind="bind"
+    from="port_parse_result"
+    as="port"
+  end
 
-    let port = port_str.parse_int() handle {
-        _ => return ParseError::InvalidFormat("port must be a number"),
-    }
+  // Validate port range
+  step id="s7" kind="compute"
+    op=less
+    input var="port"
+    input lit=1
+    as="too_low"
+  end
+  step id="s8" kind="compute"
+    op=greater
+    input var="port"
+    input lit=65535
+    as="too_high"
+  end
+  step id="s9" kind="compute"
+    op=or
+    input var="too_low"
+    input var="too_high"
+    as="out_of_range"
+  end
+  step id="s10" kind="if"
+    condition="out_of_range"
+    then
+      step id="s10a" kind="return"
+        variant type="ParseError::OutOfRange"
+          field name="field" lit="port"
+          field name="value" from="port"
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
 
-    if port < 1 || port > 65535 {
-        return ParseError::OutOfRange {
-            field: "port",
-            value: port,
-        }
-    }
+  // Find debug (with default)
+  step id="s11" kind="call"
+    fn="find_config_line"
+    arg name="input" from="input"
+    arg name="prefix" lit="debug="
+    as="debug_result"
+  end
+  step id="s12" kind="match"
+    on="debug_result"
+    case variant type="Some" bindings=("value")
+      step id="s12a" kind="compute"
+        op=equals
+        input var="value"
+        input lit="true"
+        as="debug"
+      end
+    end
+    case variant type="None"
+      step id="s12b" kind="bind"
+        lit=false
+        as="debug"
+      end
+    end
+    as="_"
+  end
 
-    let debug = lines.find(|l| l.starts_with("debug="))
-        .map(|l| l.strip_prefix("debug=") = "true")
-        .unwrap_or(false)
+  // Return config
+  step id="s13" kind="return"
+    struct type="Config"
+      field name="host" from="host"
+      field name="port" from="port"
+      field name="debug" from="debug"
+    end
+    as="_"
+  end
+end
 
-    Config { host, port, debug }
-}
+end

@@ -1,18 +1,65 @@
 // Multiple Effects - combining capabilities
 
-upload_file(path: String, url: String) -> () | IoError | HttpError
-    import { println } from console
-    import { read_file } from fs
-    import { post } from axios
-{
-    println("Reading file...")
-    let content = read_file(path)
+snippet id="upload.upload_file" kind="fn"
 
-    println("Uploading...")
-    let response = post(url, content)
+effects
+  effect console
+  effect filesystem
+  effect network
+end
 
-    println("Done: " + response.body)
-}
+signature
+  fn name="upload_file"
+    param name="path" type="String"
+    param name="url" type="String"
+    returns union
+      type="Unit"
+      type="IoError"
+      type="HttpError"
+    end
+  end
+end
 
-// Each import brings its capability into scope.
-// The function's effect set is the union of all its imports.
+body
+  step id="s1" kind="call"
+    fn="println"
+    arg name="message" lit="Reading file..."
+    as="_"
+  end
+  step id="s2" kind="call"
+    fn="read_file"
+    arg name="path" from="path"
+    as="content"
+  end
+  step id="s3" kind="call"
+    fn="println"
+    arg name="message" lit="Uploading..."
+    as="_"
+  end
+  step id="s4" kind="call"
+    fn="post"
+    arg name="url" from="url"
+    arg name="body" from="content"
+    as="response"
+  end
+  step id="s5" kind="bind"
+    field="body" of="response"
+    as="response_body"
+  end
+  step id="s6" kind="call"
+    fn="concat"
+    arg name="a" lit="Done: "
+    arg name="b" from="response_body"
+    as="message"
+  end
+  step id="s7" kind="call"
+    fn="println"
+    arg name="message" from="message"
+    as="_"
+  end
+end
+
+end
+
+// The function's effect set is the union of all declared effects.
+// Effects propagate transitively through the call graph.

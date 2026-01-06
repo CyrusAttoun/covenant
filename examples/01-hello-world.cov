@@ -1,7 +1,23 @@
-// Hello World - minimal effectful program
+// Hello World - minimal effectful function
 
-main()
-    import { println } from console
-{
-    println("Hello, world!")
-}
+snippet id="main.hello" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="main"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="println"
+    arg name="message" lit="Hello, world!"
+    as="_"
+  end
+end
+
+end

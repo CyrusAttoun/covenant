@@ -1,22 +1,106 @@
-// Pure Functions - no imports, no effects
+// Pure Functions - no effects section means no side effects
 // Compiler verifies no effectful calls
 
-add(a: Int, b: Int) -> Int {
-    a + b
-}
+snippet id="math.add" kind="fn"
 
-factorial(n: Int) -> Int {
-    if n <= 1 {
-        1
-    } else {
-        n * factorial(n - 1)
-    }
-}
+signature
+  fn name="add"
+    param name="a" type="Int"
+    param name="b" type="Int"
+    returns type="Int"
+  end
+end
 
-fibonacci(n: Int) -> Int {
-    match n {
-        0 => 0,
-        1 => 1,
-        _ => fibonacci(n - 1) + fibonacci(n - 2),
-    }
-}
+body
+  step id="s1" kind="compute"
+    op=add
+    input var="a"
+    input var="b"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="math.factorial" kind="fn"
+
+signature
+  fn name="factorial"
+    param name="n" type="Int"
+    returns type="Int"
+  end
+end
+
+body
+  step id="s1" kind="compute"
+    op=less_eq
+    input var="n"
+    input lit=1
+    as="is_base"
+  end
+  step id="s2" kind="if"
+    condition="is_base"
+    then
+      step id="s2a" kind="return"
+        lit=1
+        as="_"
+      end
+    end
+    else
+      step id="s2b" kind="compute"
+        op=sub
+        input var="n"
+        input lit=1
+        as="n_minus_1"
+      end
+      step id="s2c" kind="call"
+        fn="factorial"
+        arg name="n" from="n_minus_1"
+        as="sub_result"
+      end
+      step id="s2d" kind="compute"
+        op=mul
+        input var="n"
+        input var="sub_result"
+        as="result"
+      end
+      step id="s2e" kind="return"
+        from="result"
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="math.double" kind="fn"
+
+signature
+  fn name="double"
+    param name="x" type="Int"
+    returns type="Int"
+  end
+end
+
+body
+  step id="s1" kind="compute"
+    op=mul
+    input var="x"
+    input lit=2
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end

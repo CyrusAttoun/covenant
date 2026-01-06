@@ -1,35 +1,151 @@
 // Pattern Matching
 
-enum Json {
-    Null,
-    Bool(Bool),
-    Number(Float),
-    String(String),
-    Array(Json[]),
-    Object(Map<String, Json>),
-}
+snippet id="json.Json" kind="enum"
 
-json_type_name(value: Json) -> String {
-    match value {
-        Json::Null => "null",
-        Json::Bool(_) => "boolean",
-        Json::Number(_) => "number",
-        Json::String(_) => "string",
-        Json::Array(_) => "array",
-        Json::Object(_) => "object",
-    }
-}
+signature
+  enum name="Json"
+    variant name="Null"
+    end
+    variant name="Bool"
+      field name="value" type="Bool"
+    end
+    variant name="Number"
+      field name="value" type="Float"
+    end
+    variant name="String"
+      field name="value" type="String"
+    end
+    variant name="Array"
+      field name="items" type="Json[]"
+    end
+    variant name="Object"
+      field name="fields" type="Map<String, Json>"
+    end
+  end
+end
 
-get_string(value: Json) -> String? {
-    match value {
-        Json::String(s) => s,
-        _ => none,
-    }
-}
+end
 
-get_field(obj: Json, key: String) -> Json? {
-    match obj {
-        Json::Object(map) => map.get(key),
-        _ => none,
-    }
-}
+
+snippet id="json.type_name" kind="fn"
+
+signature
+  fn name="json_type_name"
+    param name="value" type="Json"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Null"
+      step id="s1a" kind="return"
+        lit="null"
+        as="_"
+      end
+    end
+    case variant type="Json::Bool"
+      step id="s1b" kind="return"
+        lit="boolean"
+        as="_"
+      end
+    end
+    case variant type="Json::Number"
+      step id="s1c" kind="return"
+        lit="number"
+        as="_"
+      end
+    end
+    case variant type="Json::String"
+      step id="s1d" kind="return"
+        lit="string"
+        as="_"
+      end
+    end
+    case variant type="Json::Array"
+      step id="s1e" kind="return"
+        lit="array"
+        as="_"
+      end
+    end
+    case variant type="Json::Object"
+      step id="s1f" kind="return"
+        lit="object"
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="json.get_string" kind="fn"
+
+signature
+  fn name="get_string"
+    param name="value" type="Json"
+    returns type="String" optional
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::String" bindings=("s")
+      step id="s1a" kind="return"
+        from="s"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="json.get_field" kind="fn"
+
+signature
+  fn name="get_field"
+    param name="obj" type="Json"
+    param name="key" type="String"
+    returns type="Json" optional
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="obj"
+    case variant type="Json::Object" bindings=("map")
+      step id="s1a" kind="call"
+        fn="get"
+        arg name="map" from="map"
+        arg name="key" from="key"
+        as="result"
+      end
+      step id="s1b" kind="return"
+        from="result"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1c" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end

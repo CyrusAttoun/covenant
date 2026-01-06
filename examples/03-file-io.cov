@@ -1,11 +1,43 @@
 // File I/O - multiple effects combined
 
-main() -> () | IoError
-    import { read_file, write_file } from fs
-    import { println } from console
-{
-    let content = read_file("input.txt")
-    let upper = content.to_uppercase()
-    write_file("output.txt", upper)
-    println("Done!")
-}
+snippet id="main.file_transform" kind="fn"
+
+effects
+  effect filesystem
+  effect console
+end
+
+signature
+  fn name="main"
+    returns union
+      type="Unit"
+      type="IoError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="read_file"
+    arg name="path" lit="input.txt"
+    as="content"
+  end
+  step id="s2" kind="call"
+    fn="to_uppercase"
+    arg name="s" from="content"
+    as="upper"
+  end
+  step id="s3" kind="call"
+    fn="write_file"
+    arg name="path" lit="output.txt"
+    arg name="content" from="upper"
+    as="_"
+  end
+  step id="s4" kind="call"
+    fn="println"
+    arg name="message" lit="Done!"
+    as="_"
+  end
+end
+
+end

@@ -1,58 +1,165 @@
 // AST Mutations - metaprogramming via CRUD on source code
 // These operations modify the symbol graph, which serializes back to .cov files
 
-// Rename a function across the codebase
-rename_function(old_name: String, new_name: String) -> () | MetaError
-    import { project } from meta
-{
-    // Update the function declaration
-    update project.functions
-    set name: new_name
-    where name = old_name
+snippet id="refactor.rename_function" kind="fn"
 
-    // Update all call sites (bidirectional refs make this easy)
-    update project.call_expressions
-    set callee: new_name
-    where callee = old_name
-}
+effects
+  effect meta
+end
 
-// Add a new function
-add_getter(struct_name: String, field_name: String) -> () | MetaError
-    import { project } from meta
-{
-    let struct_info = query project {
-        select * from structs where name = struct_name limit 1
-    }
+signature
+  fn name="rename_function"
+    param name="old_name" type="String"
+    param name="new_name" type="String"
+    returns union
+      type="Unit"
+      type="MetaError"
+    end
+  end
+end
 
-    let field = struct_info.fields.find(|f| f.name = field_name)
+body
+  // Update the function declaration
+  step id="s1" kind="update"
+    target="project.functions"
+    set field="name" from="new_name"
+    where
+      equals field="name" var="old_name"
+    end
+    as="_"
+  end
 
-    insert into project.functions {
-        name: "get_" + field_name,
-        params: [{ name: "self", type: struct_name }],
-        return_type: field.type,
-        body: "self." + field_name,
-        module: struct_info.module,
-    }
-}
+  // Update all call sites (bidirectional refs make this easy)
+  step id="s2" kind="update"
+    target="project.call_expressions"
+    set field="callee" from="new_name"
+    where
+      equals field="callee" var="old_name"
+    end
+    as="_"
+  end
+end
 
-// Remove unused code
-prune_dead_code() -> Int | MetaError
-    import { project } from meta
-{
-    let dead = query project {
-        select * from functions
-        where called_by = []
-          and is_exported = false
-          and is_entry_point = false
-    }
+end
 
-    delete from project.functions
-    where called_by = []
-      and is_exported = false
-      and is_entry_point = false
 
-    dead.len()
-}
+snippet id="refactor.add_getter" kind="fn"
 
-// Note: AST mutations require the [meta] capability
+effects
+  effect meta
+end
+
+signature
+  fn name="add_getter"
+    param name="struct_name" type="String"
+    param name="field_name" type="String"
+    returns union
+      type="Unit"
+      type="MetaError"
+    end
+  end
+end
+
+body
+  // Find the struct
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="structs"
+    where
+      equals field="name" var="struct_name"
+    end
+    limit=1
+    as="struct_info"
+  end
+
+  // Find the field
+  step id="s2" kind="call"
+    fn="find"
+    arg name="list" field="fields" of="struct_info"
+    arg name="pred" fn="|f| equals(f.name, field_name)"
+    as="field"
+  end
+
+  // Build getter name
+  step id="s3" kind="call"
+    fn="concat"
+    arg name="a" lit="get_"
+    arg name="b" from="field_name"
+    as="getter_name"
+  end
+
+  // Insert the getter function
+  step id="s4" kind="insert"
+    into="project.functions"
+    set field="name" from="getter_name"
+    set field="params" struct=[{name: "self", type: struct_name}]
+    set field="return_type" field="type" of="field"
+    set field="module" field="module" of="struct_info"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="refactor.prune_dead_code" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="prune_dead_code"
+    returns union
+      type="Int"
+      type="MetaError"
+    end
+  end
+end
+
+body
+  // Find dead code
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="functions"
+    where
+      and
+        equals field="called_by" lit=[]
+        equals field="is_exported" lit=false
+        equals field="is_entry_point" lit=false
+      end
+    end
+    as="dead"
+  end
+
+  // Delete dead code
+  step id="s2" kind="delete"
+    from="project.functions"
+    where
+      and
+        equals field="called_by" lit=[]
+        equals field="is_exported" lit=false
+        equals field="is_entry_point" lit=false
+      end
+    end
+    as="_"
+  end
+
+  // Return count
+  step id="s3" kind="call"
+    fn="len"
+    arg name="list" from="dead"
+    as="count"
+  end
+  step id="s4" kind="return"
+    from="count"
+    as="_"
+  end
+end
+
+end
+
+// Note: AST mutations require the [meta] effect
 // The host runtime can refuse to grant this to untrusted code

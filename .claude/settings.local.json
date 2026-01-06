@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"if exist C:\\\\Users\\\\josha\\\\.cargo\\\\bin\\\\cargo.exe echo EXISTS\")",
+      "Bash(cmd.exe /c \"dir C:\\\\Users\\\\josha\\\\.cargo\\\\bin\\\\*.exe 2>nul || echo NOT_FOUND\")",
+      "Bash(cmd.exe /c \"where /R C:\\\\Users\\\\josha cargo.exe 2>nul || echo NOT_FOUND\")"
+    ]
+  }
+}

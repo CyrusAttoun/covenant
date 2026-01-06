@@ -1,54 +1,166 @@
 // Project Queries - AST as a queryable database
+// These queries run against the symbol graph, not external databases
 
-// Find all functions with database effects
-find_db_functions() -> FunctionInfo[]
-    import { project } from meta
-{
-    query project {
-        select * from functions
-        where effects contains "database"
-    }
-}
+snippet id="meta.find_db_functions" kind="fn"
 
-// Find all callers of a specific function (uses bidirectional refs)
-find_callers(fn_name: String) -> FunctionInfo[]
-    import { project } from meta
-{
-    query project {
-        select called_by from functions
-        where name = fn_name
-    }
-}
+effects
+  effect meta
+end
 
-// Find unused code
-find_dead_code() -> FunctionInfo[]
-    import { project } from meta
-{
-    query project {
-        select * from functions
-        where called_by = []
-          and is_exported = false
-          and is_entry_point = false
-    }
-}
+signature
+  fn name="find_db_functions"
+    returns type="FunctionInfo[]"
+  end
+end
 
-// Find all hardcoded URLs
-find_urls() -> LiteralInfo[]
-    import { project } from meta
-{
-    query project {
-        select * from literals
-        where type = "String"
-          and value matches "https?://.*"
-    }
-}
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="functions"
+    where
+      contains field="effects" lit="database"
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
 
-// Method chaining alternative (same result)
-find_db_functions_alt() -> FunctionInfo[]
-    import { project } from meta
-{
-    project
-        .functions()
-        .filter(|f| f.effects contains "database")
-        .collect()
-}
+end
+
+
+snippet id="meta.find_callers" kind="fn"
+
+// Uses bidirectional refs computed by the compiler
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_callers"
+    param name="fn_name" type="String"
+    returns type="FunctionInfo[]"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select field="called_by"
+    from="functions"
+    where
+      equals field="name" var="fn_name"
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="meta.find_dead_code" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_dead_code"
+    returns type="FunctionInfo[]"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="functions"
+    where
+      and
+        equals field="called_by" lit=[]
+        equals field="is_exported" lit=false
+        equals field="is_entry_point" lit=false
+      end
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="meta.find_urls" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_urls"
+    returns type="LiteralInfo[]"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="literals"
+    where
+      and
+        equals field="type" lit="String"
+        matches field="value" lit="https?://.*"
+      end
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="meta.find_untested_requirements" kind="fn"
+
+effects
+  effect meta
+end
+
+signature
+  fn name="find_untested_requirements"
+    returns type="RequirementInfo[]"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="project"
+    select all
+    from="requirements"
+    where
+      equals field="covered_by" lit=[]
+    end
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end

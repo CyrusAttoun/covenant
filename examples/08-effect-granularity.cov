@@ -1,25 +1,102 @@
 // Effect Granularity - mixed purity in a module
+// Shows how different snippets have different effect requirements
 
-// Pure - no imports
-format_date(d: Date) -> String {
-    "{d.year}-{d.month}-{d.day}"
-}
+snippet id="utils.format_date" kind="fn"
 
-// Effectful - console capability
-log_date(d: Date)
-    import { println } from console
-{
-    println(format_date(d))
-}
+// Pure - no effects section
 
-// Effectful - time capability
-fetch_current_date() -> Date
-    import { now } from datetime
-{
-    now()
-}
+signature
+  fn name="format_date"
+    param name="d" type="Date"
+    returns type="String"
+  end
+end
 
-// Consumers choose what effects they inherit:
-//   import { format_date } from utils        // no effects
-//   import { log_date } from utils           // inherits [console]
-//   import { fetch_current_date } from utils // inherits [datetime]
+body
+  step id="s1" kind="bind"
+    field="year" of="d"
+    as="year"
+  end
+  step id="s2" kind="bind"
+    field="month" of="d"
+    as="month"
+  end
+  step id="s3" kind="bind"
+    field="day" of="d"
+    as="day"
+  end
+  step id="s4" kind="call"
+    fn="format"
+    arg name="template" lit="{}-{}-{}"
+    arg name="a" from="year"
+    arg name="b" from="month"
+    arg name="c" from="day"
+    as="result"
+  end
+  step id="s5" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="utils.log_date" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="log_date"
+    param name="d" type="Date"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="format_date"
+    arg name="d" from="d"
+    as="formatted"
+  end
+  step id="s2" kind="call"
+    fn="println"
+    arg name="message" from="formatted"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="utils.fetch_current_date" kind="fn"
+
+effects
+  effect datetime
+end
+
+signature
+  fn name="fetch_current_date"
+    returns type="Date"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="now"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+// Consumers inherit effects based on what they call:
+//   format_date       -> no effects (pure)
+//   log_date          -> effect console
+//   fetch_current_date -> effect datetime

@@ -1,0 +1,9 @@
+[package]
+name = "covenant-parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+covenant-ast = { workspace = true }
+covenant-lexer = { workspace = true }
+thiserror = { workspace = true }

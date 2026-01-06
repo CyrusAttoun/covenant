@@ -1,0 +1,20 @@
+[package]
+name = "covenant-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "covenant"
+path = "src/main.rs"
+
+[dependencies]
+covenant-ast = { workspace = true }
+covenant-lexer = { workspace = true }
+covenant-parser = { workspace = true }
+covenant-checker = { workspace = true }
+covenant-graph = { workspace = true }
+covenant-codegen = { workspace = true }
+clap = { workspace = true }
+ariadne = { workspace = true }
+serde_json = { workspace = true }
+rustyline = { workspace = true }

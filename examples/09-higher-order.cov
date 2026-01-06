@@ -1,32 +1,184 @@
 // Higher-Order Functions
+// map is pure if the callback is pure, effectful if callback is effectful
 
-// map is pure if f is pure, effectful if f is effectful
-map<T, U>(list: T[], f: (T) -> U) -> U[] {
-    let mut result = []
-    for item in list {
-        result.push(f(item))
-    }
-    result
-}
+snippet id="list.map" kind="fn"
 
-// filter - predicate must be pure
-filter<T>(list: T[], pred: (T) -> Bool) -> T[] {
-    let mut result = []
-    for item in list {
-        if pred(item) {
-            result.push(item)
-        }
-    }
-    result
-}
+// Effect polymorphism: inherits effects from callback
 
-// Usage
-double(x: Int) -> Int { x * 2 }
-is_even(x: Int) -> Bool { x % 2 = 0 }
+signature
+  fn name="map"
+    generic name="T"
+    generic name="U"
+    param name="list" type="T[]"
+    param name="f" type="(T) -> U"
+    returns type="U[]"
+  end
+end
 
-example() -> Int[] {
-    let nums = [1, 2, 3, 4, 5]
-    let doubled = map(nums, double)       // pure
-    let evens = filter(doubled, is_even)  // pure
-    evens  // [4, 8]
-}
+body
+  step id="s1" kind="bind"
+    lit=[]
+    mut
+    as="result"
+  end
+  step id="s2" kind="for"
+    var="item" in="list"
+    step id="s2a" kind="call"
+      fn="f"
+      arg name="x" from="item"
+      as="mapped"
+    end
+    step id="s2b" kind="call"
+      fn="push"
+      arg name="list" from="result"
+      arg name="item" from="mapped"
+      as="_"
+    end
+    as="_"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="list.filter" kind="fn"
+
+// Predicate should be pure
+
+signature
+  fn name="filter"
+    generic name="T"
+    param name="list" type="T[]"
+    param name="pred" type="(T) -> Bool"
+    returns type="T[]"
+  end
+end
+
+body
+  step id="s1" kind="bind"
+    lit=[]
+    mut
+    as="result"
+  end
+  step id="s2" kind="for"
+    var="item" in="list"
+    step id="s2a" kind="call"
+      fn="pred"
+      arg name="x" from="item"
+      as="keep"
+    end
+    step id="s2b" kind="if"
+      condition="keep"
+      then
+        step id="s2c" kind="call"
+          fn="push"
+          arg name="list" from="result"
+          arg name="item" from="item"
+          as="_"
+        end
+      end
+      as="_"
+    end
+    as="_"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="math.double" kind="fn"
+
+signature
+  fn name="double"
+    param name="x" type="Int"
+    returns type="Int"
+  end
+end
+
+body
+  step id="s1" kind="compute"
+    op=mul
+    input var="x"
+    input lit=2
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="math.is_even" kind="fn"
+
+signature
+  fn name="is_even"
+    param name="x" type="Int"
+    returns type="Bool"
+  end
+end
+
+body
+  step id="s1" kind="compute"
+    op=mod
+    input var="x"
+    input lit=2
+    as="remainder"
+  end
+  step id="s2" kind="compute"
+    op=equals
+    input var="remainder"
+    input lit=0
+    as="result"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="example.usage" kind="fn"
+
+signature
+  fn name="example"
+    returns type="Int[]"
+  end
+end
+
+body
+  step id="s1" kind="bind"
+    lit=[1, 2, 3, 4, 5]
+    as="nums"
+  end
+  step id="s2" kind="call"
+    fn="map"
+    arg name="list" from="nums"
+    arg name="f" from="double"
+    as="doubled"
+  end
+  step id="s3" kind="call"
+    fn="filter"
+    arg name="list" from="doubled"
+    arg name="pred" from="is_even"
+    as="evens"
+  end
+  step id="s4" kind="return"
+    from="evens"
+    as="_"
+  end
+end
+
+end

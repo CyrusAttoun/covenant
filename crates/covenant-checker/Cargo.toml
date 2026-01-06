@@ -1,0 +1,8 @@
+[package]
+name = "covenant-checker"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+covenant-ast = { workspace = true }
+thiserror = { workspace = true }

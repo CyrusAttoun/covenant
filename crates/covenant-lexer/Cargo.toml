@@ -1,0 +1,8 @@
+[package]
+name = "covenant-lexer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+covenant-ast = { workspace = true }
+logos = { workspace = true }
