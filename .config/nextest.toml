@@ -1,0 +1,36 @@
+# Nextest configuration for Covenant project
+
+[profile.default]
+# Run tests in parallel (default: number of CPUs)
+test-threads = "num-cpus"
+
+# Retry flaky tests
+retries = 0
+
+# Test execution timeout
+slow-timeout = { period = "60s", terminate-after = 2 }
+
+# Success output
+success-output = "immediate"
+failure-output = "immediate-final"
+
+[profile.ci]
+# CI-specific settings
+retries = 2
+slow-timeout = { period = "120s", terminate-after = 3 }
+
+# Generate JUnit XML for CI systems
+[profile.ci.junit]
+path = "target/nextest/junit.xml"
+
+[profile.default.overrides]
+# Parser tests are fast, run them all
+[[profile.default.overrides]]
+filter = "test(parser)"
+threads-required = 1
+
+# Storage tests may need exclusive access
+[[profile.default.overrides]]
+filter = "test(storage)"
+threads-required = 1
+test-group = "storage-exclusive"

@@ -61,8 +61,8 @@ pub enum IrCmpOp {
     Ge,
 }
 
-impl From<BinaryOp> for Option<IrBinOp> {
-    fn from(op: BinaryOp) -> Self {
+impl IrBinOp {
+    pub fn from_binary_op(op: BinaryOp) -> Option<Self> {
         match op {
             BinaryOp::Add => Some(IrBinOp::Add),
             BinaryOp::Sub => Some(IrBinOp::Sub),
@@ -74,8 +74,8 @@ impl From<BinaryOp> for Option<IrBinOp> {
     }
 }
 
-impl From<BinaryOp> for Option<IrCmpOp> {
-    fn from(op: BinaryOp) -> Self {
+impl IrCmpOp {
+    pub fn from_binary_op(op: BinaryOp) -> Option<Self> {
         match op {
             BinaryOp::Eq => Some(IrCmpOp::Eq),
             BinaryOp::Ne => Some(IrCmpOp::Ne),

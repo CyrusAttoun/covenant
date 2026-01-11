@@ -27,6 +27,25 @@ pub enum ParseError {
 
     #[error("expected declaration")]
     ExpectedDeclaration { span: Span },
+
+    #[error("unexpected: expected {expected}, found {found:?}")]
+    Unexpected {
+        expected: String,
+        found: TokenKind,
+        span: Span,
+    },
+
+    #[error("invalid snippet kind: {kind}")]
+    InvalidSnippetKind { kind: String, span: Span },
+
+    #[error("invalid step kind: {kind}")]
+    InvalidStepKind { kind: String, span: Span },
+
+    #[error("invalid operation: {name}")]
+    InvalidOperation { name: String, span: Span },
+
+    #[error("unexpected section: {section}")]
+    UnexpectedSection { section: String, span: Span },
 }
 
 impl ParseError {
@@ -38,6 +57,11 @@ impl ParseError {
             ParseError::InvalidPattern { span } => *span,
             ParseError::InvalidType { span } => *span,
             ParseError::ExpectedDeclaration { span } => *span,
+            ParseError::Unexpected { span, .. } => *span,
+            ParseError::InvalidSnippetKind { span, .. } => *span,
+            ParseError::InvalidStepKind { span, .. } => *span,
+            ParseError::InvalidOperation { span, .. } => *span,
+            ParseError::UnexpectedSection { span, .. } => *span,
         }
     }
 

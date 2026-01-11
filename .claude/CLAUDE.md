@@ -8,10 +8,21 @@ A machine-first programming language designed for LLM generation and navigation.
 
 | Doc | Purpose |
 |-----|---------|
-| [DESIGN.md](../DESIGN.md) | Philosophy, four-layer model, core design |
+| [DESIGN.md](../DESIGN.md) | Philosophy, four-layer model, core design, compiler semantics |
 | [grammar.ebnf](../grammar.ebnf) | Formal syntax definition (machine-parseable) |
+| [ERROR_CODES.md](../ERROR_CODES.md) | Comprehensive error catalog with auto-fix strategies |
+| [COMPILER.md](../COMPILER.md) | Detailed compilation phase specifications |
+| [QUERY_SEMANTICS.md](../QUERY_SEMANTICS.md) | Formal operational semantics for queries |
 | [examples/](../examples/) | Example `.cov` programs |
 | [prior-art.md](../prior-art.md) | Lessons from Austral, Koka, and LLM-native design |
+
+---
+
+## Specifications
+
+| Spec | Purpose |
+|------|---------|
+| [LLM Code Generation](../docs/specs/llm-code-generation.md) | LLM-based code generation system with compiler validation and self-correction |
 
 ---
 
@@ -56,7 +67,7 @@ end
 
 body
   step id="s1" kind="query"
-    target="app_db"
+    target="project"
     select all
     from="users"
     where
@@ -89,24 +100,15 @@ end
 | `x && y` | `op=and input var="x" input var="y"` |
 | `!x` | `op=not input var="x"` |
 
-### Query Syntax
+### Query System
 
-Same syntax for database and AST queries. Target determines compilation:
+Two paths: **Covenant dialect** (default) for Covenant types, **SQL dialects** for external databases.
+
+#### Covenant Queries (Default)
+
+Simple, typed syntax for querying Covenant types (project AST, structs, collections):
 
 ```
-// Database query (compiles to SQL)
-step id="s1" kind="query"
-  target="app_db"
-  select all
-  from="users"
-  where
-    equals field="id" var="user_id"
-  end
-  limit=1
-  as="user"
-end
-
-// Project query (compiles to AST traversal)
 step id="s1" kind="query"
   target="project"
   select all
@@ -114,38 +116,94 @@ step id="s1" kind="query"
   where
     contains field="effects" lit="database"
   end
+  order by="name" dir="asc"
+  limit=10
   as="db_functions"
 end
 ```
 
-### CRUD Operations
+Supported: `select all/field`, `from`, `where`, `join`, `follow rel`, `order`, `limit`
+
+#### SQL Dialect Queries
+
+For external databases, use opaque `body ... end` blocks with full SQL power:
+
+```
+step id="s1" kind="query"
+  dialect="postgres"
+  target="app_db"
+  body
+    SELECT u.id, u.name, COUNT(o.id) as order_count
+    FROM users u
+    LEFT JOIN orders o ON o.user_id = u.id
+    WHERE u.created_at > :cutoff
+    GROUP BY u.id, u.name
+  end
+  params
+    param name="cutoff" from="cutoff_date"
+  end
+  returns collection of="UserOrderStats"
+  as="high_volume_users"
+end
+```
+
+**Key points:**
+- `dialect` required (postgres, sqlserver, mysql, sqlite)
+- `body ... end` contains raw SQL (not parsed by Covenant)
+- `params` declares parameter bindings
+- `returns` type annotation required
+
+### CRUD Operations (Covenant Types)
 
 ```
 // Insert
 step id="s1" kind="insert"
-  into="app_db.users"
+  into="project.data_nodes"
   set field="name" from="name"
-  set field="email" from="email"
-  as="new_user"
+  set field="content" from="content"
+  as="new_node"
 end
 
 // Update
 step id="s2" kind="update"
-  target="app_db.users"
-  set field="is_active" lit=false
+  target="project.data_nodes"
+  set field="content" from="updated_content"
   where
-    less field="last_login" var="cutoff"
+    equals field="id" var="node_id"
   end
   as="updated"
 end
 
 // Delete
 step id="s3" kind="delete"
-  from="app_db.users"
+  from="project.data_nodes"
   where
-    equals field="id" var="user_id"
+    equals field="id" var="node_id"
   end
   as="_"
+end
+```
+
+For external databases, use SQL dialect blocks.
+
+### Database Bindings
+
+```
+snippet id="db.app_db" kind="database"
+
+metadata
+  type="database"
+  dialect="postgres"
+  connection="env:APP_DB_URL"
+end
+
+schema
+  table name="users"
+    field name="id" type="Int" primary_key=true
+    field name="email" type="String"
+  end
+end
+
 end
 ```
 
@@ -154,7 +212,7 @@ end
 `none` represents absence. In queries:
 ```
 where
-  equals field="deleted_at" lit=none    // → IS NULL
+  equals field="deleted_at" lit=none    // Check for null
 end
 ```
 

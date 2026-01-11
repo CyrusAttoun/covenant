@@ -8,16 +8,29 @@
    2. No operators - use keywords: add, equals, and, or, not
    3. No expression nesting - one operation per step, named outputs (SSA)
    4. Strict canonical ordering - one valid way to write everything
-   5. ~40-50 keywords total - small grammar surface area
-   6. Double quotes only, // comments
+   5. ~50-60 keywords total - small grammar surface area
+   6. Double quotes only, // comments (ignored), note keyword (queryable)
+   7. Data and code unified via relations - documentation links to functions
+   8. Query dialects: covenant (default, typed) vs sql dialects (opaque body blocks)
 *)
 
 (* === Top Level === *)
-program        = { snippet } ;
+program        = { top_level_item } ;
+top_level_item = snippet | refactor_block ;
 
-snippet        = "snippet" snippet_header { section } "end" ;
+snippet        = "snippet" snippet_header { note_decl } { section } "end" ;
 snippet_header = "id" "=" STRING "kind" "=" snippet_kind ;
-snippet_kind   = "fn" | "struct" | "enum" | "module" | "database" | "extern" | "test" ;
+snippet_kind   = "fn" | "struct" | "enum" | "module" | "database" | "extern" | "test" | "data" ;
+
+(* === Refactor Block === *)
+(* Multi-snippet transformations with transactional semantics *)
+refactor_block = "refactor" "id" "=" STRING { step } "end" ;
+
+(* === Notes (queryable annotations) === *)
+(* Notes appear after snippet header, before sections *)
+(* Unlike // comments which are ignored, notes are part of the AST and queryable *)
+note_decl      = "note" [ note_lang ] ( STRING | TRIPLE_STRING ) ;
+note_lang      = "lang" "=" STRING ;
 
 (* === Sections (in canonical order) === *)
 section        = effects_section
@@ -27,7 +40,10 @@ section        = effects_section
                | signature_section
                | body_section
                | tests_section
-               | metadata_section ;
+               | metadata_section
+               | relations_section
+               | content_section
+               | schema_section ;
 
 (* === Effects Section === *)
 (* Declares capabilities this snippet requires *)
@@ -84,6 +100,7 @@ param_attrs    = { "optional" | "default" "=" value } ;
 
 returns_decl   = "returns" return_type "end" ;
 return_type    = "type" "=" type_ref [ "optional" ]
+               | "collection" "of" "=" type_ref
                | "union" { union_member } ;
 union_member   = "type" "=" type_ref [ "optional" ] ;
 
@@ -98,11 +115,15 @@ body_section   = "body" { step } "end" ;
 
 step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
 step_kind      = "compute" | "call" | "query" | "bind" | "return"
-               | "if" | "match" | "for" | "insert" | "update" | "delete" ;
+               | "if" | "match" | "for" | "insert" | "update" | "delete"
+               | "transaction" | "update_snippet" | "update_all"
+               | "traverse" ;
 
 step_body      = compute_body | call_body | query_body | bind_body | return_body
                | if_body | match_body | for_body
-               | insert_body | update_body | delete_body ;
+               | insert_body | update_body | delete_body
+               | transaction_body | update_snippet_body | update_all_body
+               | traverse_body ;
 
 (* --- Compute: arithmetic and logic --- *)
 compute_body   = "op" "=" binary_op input input
@@ -126,38 +147,108 @@ call_arg       = "arg" "name" "=" STRING "from" "=" STRING ;
 error_handler  = "handle" { handle_case } "end" ;
 handle_case    = "case" "type" "=" type_ref { step } "end" ;
 
-(* --- Query: database or AST traversal --- *)
-query_body     = "target" "=" STRING query_clauses ;
-query_clauses  = select_clause [ from_clause ] [ join_clause ] [ where_clause ]
-                 [ order_clause ] [ limit_clause ] ;
+(* === Query Step === *)
+(* Unified query with dialect attribute determining syntax *)
+(*
+   - dialect omitted or "covenant": structured Covenant query syntax (typed)
+   - dialect = "postgres" | "sqlserver" | etc: opaque body block (raw SQL)
 
-select_clause  = "select" ( "all" | { select_item } ) ;
-select_item    = "field" "=" STRING [ "alias" "=" STRING ] ;
+   Covenant dialect: minimal, LLM-friendly syntax for Covenant types
+   SQL dialects: full SQL power via body block, compiler only validates param bindings
+*)
 
-from_clause    = "from" "=" STRING [ "alias" "=" STRING ] ;
+query_body     = [ dialect_clause ] "target" "=" STRING query_content ;
 
-join_clause    = { "join" "type" "=" join_type "table" "=" STRING "on" condition "end" } ;
-join_type      = "inner" | "left" | "right" | "outer" ;
+(* Dialect declaration - determines body syntax *)
+dialect_clause = "dialect" "=" dialect_value ;
+dialect_value  = STRING ;   (* "covenant" | "postgres" | "sqlserver" | "mysql" | "sqlite" | etc *)
 
+(* Query content depends on dialect *)
+query_content  = covenant_query_content     (* When dialect omitted or "covenant" *)
+               | dialect_query_content ;    (* When dialect is SQL or other *)
+
+(* --- Covenant Dialect: Structured, Typed Queries --- *)
+(* Simple syntax for querying Covenant types (project AST, structs, collections) *)
+covenant_query_content =
+    select_clause
+    from_clause
+    [ join_or_follow ]
+    [ where_clause ]
+    [ order_clause ]
+    [ limit_clause ] ;
+
+(* Simple select: all fields or specific fields *)
+select_clause  = "select" ( "all" | { select_field } ) ;
+select_field   = "field" "=" STRING ;
+
+from_clause    = "from" "=" STRING ;
+
+(* Join: explicit field join OR relation traversal *)
+join_or_follow = join_clause | follow_clause ;
+
+(* Explicit join on matching fields *)
+join_clause    = "join" "to" "=" STRING "on" condition "end" ;
+
+(* Follow declared relation (cleaner when relations are pre-declared) *)
+follow_clause  = "follow" "rel" "=" STRING ;
+
+(* Where: simple conditions only *)
 where_clause   = "where" condition "end" ;
 
-condition      = simple_condition | compound_condition ;
-simple_condition = compare_op "field" "=" STRING ( "var" "=" STRING | "lit" "=" literal ) ;
-compare_op     = "equals" | "not_equals" | "less" | "greater" | "less_eq" | "greater_eq"
-               | "contains" | "matches" ;
+condition      = simple_condition | compound_condition | relation_condition ;
+
+simple_condition = compare_op "field" "=" STRING ( "var" "=" STRING | "lit" "=" literal | "field" "=" STRING ) ;
+
+compare_op     = "equals" | "not_equals" | "less" | "greater" | "less_eq" | "greater_eq" | "contains" ;
+
 compound_condition = ( "and" | "or" ) { condition } "end"
                    | "not" condition ;
 
-order_clause   = "order" { order_item } ;
-order_item     = "by" "=" STRING "dir" "=" ( "asc" | "desc" ) ;
+(* Relation conditions for querying by graph edges *)
+relation_condition = "rel_to" "target" "=" STRING "type" "=" relation_type
+                   | "rel_from" "source" "=" STRING "type" "=" relation_type
+                   | "has_rel" "type" "=" relation_type ;
 
+(* Order by single field *)
+order_clause   = "order" "by" "=" STRING "dir" "=" ( "asc" | "desc" ) ;
+
+(* Limit with optional offset *)
 limit_clause   = "limit" "=" NUMBER [ "offset" "=" NUMBER ] ;
 
+(* --- SQL Dialects: Opaque Body Block --- *)
+(* For postgres, sqlserver, mysql, sqlite, lancedb, etc. *)
+(* Compiler does NOT parse SQL - only validates parameter bindings *)
+dialect_query_content =
+    "body" RAW_BLOCK_CONTENT "end"
+    [ params_section ]
+    "returns" return_type_spec ;
+
+(* Raw block content - everything between body and end keywords *)
+(* Parser treats this as opaque text, passed directly to database driver *)
+RAW_BLOCK_CONTENT = { any_char_except_end_keyword } ;
+
+(* Parameter declarations - compiler validates against placeholders in body *)
+(* Placeholder syntax per dialect: :name (postgres), @name (sqlserver), ? (mysql) *)
+params_section = "params" { param_binding } "end" ;
+param_binding  = "param" "name" "=" STRING "from" "=" STRING ;
+
+(* Return type annotation - required for dialect queries *)
+return_type_spec = "type" "=" type_ref
+                 | "collection" "of" "=" type_ref
+                 | "union" { union_member } "end" ;
+
 (* --- Bind: variable binding --- *)
-bind_body      = [ "mut" ] "from" "=" STRING ;
+bind_body      = [ "mut" ] ( "from" "=" STRING | "lit" "=" literal ) ;
 
 (* --- Return --- *)
-return_body    = [ "from" "=" STRING ] ;
+return_body    = [ "from" "=" STRING ]
+               | "lit" "=" literal
+               | variant_constructor
+               | struct_constructor ;
+
+variant_constructor = "variant" "type" "=" STRING { constructor_field } "end" ;
+struct_constructor  = "struct" "type" "=" STRING { constructor_field } "end" ;
+constructor_field   = "field" "name" "=" STRING ( "from" "=" STRING | "lit" "=" literal ) ;
 
 (* --- If --- *)
 if_body        = "condition" "=" STRING "then" { step } [ "else" { step } ] ;
@@ -175,15 +266,34 @@ pattern        = "wildcard"
 (* --- For --- *)
 for_body       = "var" "=" STRING "in" "=" STRING { step } ;
 
-(* --- Insert --- *)
+(* --- Insert: Covenant types only --- *)
 insert_body    = "into" "=" STRING { field_value } ;
-field_value    = "set" "field" "=" STRING "from" "=" STRING ;
+field_value    = "set" "field" "=" STRING ( "from" "=" STRING | "lit" "=" literal ) ;
 
-(* --- Update --- *)
+(* --- Update: Covenant types only --- *)
 update_body    = "target" "=" STRING { field_value } [ where_clause ] ;
 
-(* --- Delete --- *)
+(* --- Delete: Covenant types only --- *)
 delete_body    = "from" "=" STRING [ where_clause ] ;
+
+(* --- Transaction: wraps multiple steps for atomicity --- *)
+transaction_body = [ "isolation" "=" isolation_level ] { step } ;
+isolation_level  = "read_uncommitted" | "read_committed" | "repeatable_read" | "serializable" ;
+
+(* --- Update Snippet: modify snippet metadata (for refactoring) --- *)
+update_snippet_body = "target" "=" STRING { field_value } ;
+
+(* --- Update All: batch update from query results --- *)
+update_all_body = "target" "=" STRING { field_value } ;
+
+(* --- Traverse: graph traversal for relations --- *)
+(* Follows relation edges transitively from a starting node *)
+traverse_body  = "target" "=" STRING
+                 "from" "=" STRING
+                 "follow" "type" "=" relation_type
+                 [ "depth" "=" ( NUMBER | "unbounded" ) ]
+                 [ "direction" "=" ( "outgoing" | "incoming" | "both" ) ]
+                 [ where_clause ] ;
 
 (* === Tests Section === *)
 (* Test definitions linked to requirements *)
@@ -203,7 +313,54 @@ meta_field     = "author" "=" STRING
                | "confidence" "=" NUMBER
                | "provenance" "=" STRING
                | "cost_hint" "=" ( "cheap" | "moderate" | "expensive" )
-               | "latency_hint" "=" ( "fast" | "medium" | "slow" ) ;
+               | "latency_hint" "=" ( "fast" | "medium" | "slow" )
+               | "tags" "=" array_literal
+               | "generated_by" "=" STRING
+               | "human_reviewed" "=" ( "true" | "false" )
+               (* Extended metadata for database bindings *)
+               | "type" "=" STRING
+               | "dialect" "=" STRING
+               | "connection" "=" STRING
+               | "version" "=" STRING
+               | "contract" "=" STRING ;
+
+(* === Relations Section === *)
+(* Semantic relationships between snippets - data and code unified *)
+(* Compiler auto-maintains inverse relations (Invariant I5) *)
+relations_section = "relations" { relation_decl } "end" ;
+relation_decl  = "rel" relation_dir "=" STRING "type" "=" relation_type ;
+relation_dir   = "to" | "from" ;
+
+(* Fixed vocabulary of relation types - extensible in future versions *)
+relation_type  = (* Structural *)
+                 "contains" | "contained_by" | "next" | "previous"
+                 (* Semantic *)
+               | "describes" | "described_by" | "elaborates_on" | "contrasts_with" | "example_of"
+                 (* Temporal *)
+               | "supersedes" | "precedes" | "version_of"
+                 (* Causal *)
+               | "causes" | "caused_by" | "motivates" | "enables"
+                 (* Reference *)
+               | "related_to" | "depends_on" | "implements" | "implemented_by" ;
+
+(* === Content Section === *)
+(* For kind="data" snippets: the actual data content *)
+(* Can be schema-free (flexible) or validated against optional schema *)
+content_section = "content" content_body "end" ;
+content_body   = STRING | TRIPLE_STRING | { content_field } ;
+content_field  = IDENT ( STRING | TRIPLE_STRING | literal | struct_literal ) ;
+
+(* === Schema Section === *)
+(* Schema for data snippets and database bindings *)
+schema_section = "schema" schema_content "end" ;
+schema_content = { schema_item } ;
+schema_item    = schema_field | table_def ;
+schema_field   = "field" "name" "=" STRING "type" "=" type_ref [ field_modifiers ] ;
+field_modifiers = { "optional" | "primary_key" "=" ( "true" | "false" ) } ;
+
+(* Table definitions for database bindings *)
+table_def      = "table" "name" "=" STRING { table_field } "end" ;
+table_field    = "field" "name" "=" STRING "type" "=" type_ref [ field_modifiers ] ;
 
 (* === Type References === *)
 type_ref       = type_path [ type_modifiers ] ;
@@ -228,7 +385,8 @@ struct_field_lit = STRING ":" literal ;
 IDENT          = letter { letter | digit | "_" } ;
 NUMBER         = digit { digit } [ "." digit { digit } ] ;
 STRING         = '"' { any_char_except_quote | escape_seq } '"' ;
-escape_seq     = "\\" ( '"' | "\\" | "n" | "t" | "r" ) ;
+TRIPLE_STRING  = '"""' { any_char | newline } '"""' ;   (* Multi-line string, Python-style *)
+escape_seq     = "\\" ( '"' | "\\" | "n" | "t" | "r" | "u" hex hex hex hex ) ;
 
 (* === Comments === *)
 (* // single line comment *)
@@ -236,18 +394,28 @@ COMMENT        = "//" { any_char_except_newline } NEWLINE ;
 
 (* === Reserved Keywords (canonical list) === *)
 (*
-   Blocks: snippet, end, effects, requires, types, tools, signature, body, tests, metadata
-   Types: struct, enum, alias, field, variant, fn, param, returns, union, generic, type
+   Blocks: snippet, end, effects, requires, types, tools, signature, body, tests, metadata, refactor, relations, content, schema
+   Snippet Kinds: fn, struct, enum, module, database, extern, test, data
+   Types: struct, enum, alias, field, variant, fn, param, returns, union, generic, type, collection, of
    Effects: effect
    Requirements: req, text, priority, status
    Tools: tool, contract, idempotent, timeout, retry, auth
-   Steps: step, kind, as, op, input, var, lit, from, of
-   Operators: add, sub, mul, div, mod, equals, not_equals, less, greater, less_eq, greater_eq, and, or, not, neg, concat, contains, matches
+   Steps: step, kind, as, op, input, var, lit, from, of, into, set
+   Operators: add, sub, mul, div, mod, equals, not_equals, less, greater, less_eq, greater_eq, and, or, not, neg, concat, contains
    Control: if, then, else, match, case, for, in, return, bind, mut
-   Query: query, target, select, all, from, join, inner, left, right, outer, on, where, order, by, dir, asc, desc, limit, offset
-   CRUD: insert, into, update, set, delete
+   Query: query, target, select, all, from, join, to, on, where, order, by, dir, asc, desc, limit, offset, follow, rel
+   Dialects: dialect (value is freeform string for extensibility)
+   Query Params: params, param, name
+   CRUD: insert, update, delete
+   Transaction: transaction, isolation, read_uncommitted, read_committed, repeatable_read, serializable
+   Refactoring: update_snippet, update_all
    Tests: test, covers, property, unit, integration, golden
-   Metadata: author, created, modified, confidence, provenance, cost_hint, latency_hint, cheap, moderate, expensive, fast, medium, slow
+   Metadata: author, created, modified, confidence, provenance, cost_hint, latency_hint, cheap, moderate, expensive, fast, medium, slow, tags, generated_by, human_reviewed, connection, version
    Literals: true, false, none
-   Modifiers: optional, default, constraint, handle, wildcard, binding, literal
+   Modifiers: optional, default, constraint, handle, wildcard, binding, literal, primary_key
+   Notes: note, lang
+   Relations: rel, to, from, type, contains, contained_by, next, previous, describes, described_by, elaborates_on, contrasts_with, example_of, supersedes, precedes, version_of, causes, caused_by, motivates, enables, related_to, depends_on, implements, implemented_by
+   Traversal: traverse, follow, depth, unbounded, direction, outgoing, incoming, both
+   Relation Queries: rel_to, rel_from, has_rel, source
+   Schema: table, primary_key
 *)

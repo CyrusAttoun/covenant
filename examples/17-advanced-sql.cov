@@ -1,0 +1,384 @@
+// Example 17: Advanced SQL Features
+// Demonstrates complex SQL via dialect body blocks
+
+// === PostgreSQL: Aggregations, CTEs, Array Functions ===
+
+snippet id="analytics.high_value_customers" kind="fn"
+
+effects
+  effect database
+end
+
+requires
+  req id="R-ANALYTICS-001"
+    text "Identify customers with total spending above threshold"
+    priority high
+  end
+end
+
+signature
+  fn name="get_high_value_customers"
+    param name="min_revenue" type="Decimal"
+    param name="min_orders" type="Int"
+    returns collection of="CustomerStats"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="postgres"
+    target="app_db"
+    body
+      WITH customer_orders AS (
+        SELECT
+          customer_id,
+          COUNT(*) as order_count,
+          SUM(total) as total_revenue,
+          AVG(total) as avg_order_value,
+          MIN(total) as smallest_order,
+          MAX(total) as largest_order,
+          ARRAY_AGG(DISTINCT product_id) as products
+        FROM orders
+        GROUP BY customer_id
+      )
+      SELECT
+        c.id,
+        c.email,
+        c.name,
+        co.order_count,
+        co.total_revenue,
+        co.avg_order_value,
+        co.products
+      FROM customer_orders co
+      JOIN customers c ON c.id = co.customer_id
+      WHERE co.total_revenue > :min_revenue
+        AND co.order_count >= :min_orders
+      ORDER BY co.total_revenue DESC
+    end
+    params
+      param name="min_revenue" from="min_revenue"
+      param name="min_orders" from="min_orders"
+    end
+    returns collection of="CustomerStats"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+tests
+  test id="T-ANALYTICS-001" kind="unit" covers="R-ANALYTICS-001"
+    // Test with known data
+  end
+end
+
+end
+
+
+// === SQL Server: Window Functions, Running Totals, Ranking ===
+
+snippet id="analytics.sales_with_metrics" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="calculate_sales_metrics"
+    param name="user_id" type="Int"
+    returns collection of="SalesMetrics"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="sqlserver"
+    target="analytics_db"
+    body
+      SELECT
+        order_id,
+        order_date,
+        amount,
+
+        -- Ranking
+        ROW_NUMBER() OVER (ORDER BY order_date) as order_sequence,
+        RANK() OVER (ORDER BY amount DESC) as amount_rank,
+        DENSE_RANK() OVER (ORDER BY amount DESC) as dense_amount_rank,
+
+        -- Running totals
+        SUM(amount) OVER (
+          ORDER BY order_date
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) as running_total,
+
+        -- Moving averages
+        AVG(amount) OVER (
+          ORDER BY order_date
+          ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+        ) as moving_avg_3,
+
+        -- Lag/Lead
+        LAG(amount, 1) OVER (ORDER BY order_date) as prev_amount,
+        LEAD(amount, 1) OVER (ORDER BY order_date) as next_amount,
+
+        -- Grand total for percentage calc
+        SUM(amount) OVER () as grand_total,
+        CAST(amount AS FLOAT) / SUM(amount) OVER () * 100 as pct_of_total
+
+      FROM orders
+      WHERE user_id = @user_id
+      ORDER BY order_date
+    end
+    params
+      param name="user_id" from="user_id"
+    end
+    returns collection of="SalesMetrics"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// === PostgreSQL: Complex CTEs with Recursive Query ===
+
+snippet id="analytics.frequent_buyer_analysis" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="analyze_frequent_buyers"
+    param name="cutoff_date" type="DateTime"
+    param name="min_orders" type="Int"
+    returns collection of="BuyerAnalysis"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="postgres"
+    target="app_db"
+    body
+      WITH RECURSIVE
+        -- CTE 1: Recent orders
+        recent_orders AS (
+          SELECT *
+          FROM orders
+          WHERE created_at > :cutoff_date
+        ),
+
+        -- CTE 2: Customer aggregates
+        customer_stats AS (
+          SELECT
+            customer_id,
+            COUNT(*) as order_count,
+            SUM(total) as total_spent,
+            AVG(total) as avg_order,
+            ARRAY_AGG(DISTINCT product_id) as products_ordered,
+            MIN(created_at) as first_order,
+            MAX(created_at) as last_order
+          FROM recent_orders
+          GROUP BY customer_id
+        ),
+
+        -- CTE 3: Frequent buyers only
+        frequent_buyers AS (
+          SELECT *
+          FROM customer_stats
+          WHERE order_count >= :min_orders
+        ),
+
+        -- CTE 4: Rank within segments
+        ranked_buyers AS (
+          SELECT
+            fb.*,
+            c.email,
+            c.name,
+            c.segment,
+            ROW_NUMBER() OVER (
+              PARTITION BY c.segment
+              ORDER BY fb.total_spent DESC
+            ) as rank_in_segment
+          FROM frequent_buyers fb
+          JOIN customers c ON c.id = fb.customer_id
+        )
+
+      SELECT *
+      FROM ranked_buyers
+      WHERE rank_in_segment <= 10
+      ORDER BY segment, rank_in_segment
+    end
+    params
+      param name="cutoff_date" from="cutoff_date"
+      param name="min_orders" from="min_orders"
+    end
+    returns collection of="BuyerAnalysis"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// === PostgreSQL: Full-Text Search ===
+
+snippet id="search.fulltext" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="search_documents"
+    param name="query" type="String"
+    param name="limit" type="Int"
+    returns collection of="SearchResult"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="postgres"
+    target="app_db"
+    body
+      SELECT
+        id,
+        title,
+        ts_headline('english', content, websearch_to_tsquery('english', :query)) as snippet,
+        ts_rank(search_vector, websearch_to_tsquery('english', :query)) as relevance
+      FROM documents
+      WHERE search_vector @@ websearch_to_tsquery('english', :query)
+      ORDER BY relevance DESC
+      LIMIT :limit
+    end
+    params
+      param name="query" from="query"
+      param name="limit" from="limit"
+    end
+    returns collection of="SearchResult"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// === SQL Server: Pivot Table ===
+
+snippet id="reporting.sales_pivot" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="get_quarterly_sales_pivot"
+    param name="year" type="Int"
+    returns collection of="QuarterlySales"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="sqlserver"
+    target="analytics_db"
+    body
+      SELECT
+        region,
+        [1] as Q1,
+        [2] as Q2,
+        [3] as Q3,
+        [4] as Q4,
+        [1] + [2] + [3] + [4] as total
+      FROM (
+        SELECT region, quarter, sales
+        FROM sales_data
+        WHERE year = @year
+      ) AS source
+      PIVOT (
+        SUM(sales)
+        FOR quarter IN ([1], [2], [3], [4])
+      ) AS pivoted
+      ORDER BY total DESC
+    end
+    params
+      param name="year" from="year"
+    end
+    returns collection of="QuarterlySales"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// === PostgreSQL: JSON Operations ===
+
+snippet id="users.update_preferences" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="update_user_preferences"
+    param name="user_id" type="Int"
+    param name="theme" type="String"
+    param name="notifications" type="Bool"
+    returns type="User"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="postgres"
+    target="app_db"
+    body
+      UPDATE users
+      SET preferences = preferences
+        || jsonb_build_object('theme', :theme::text)
+        || jsonb_build_object('notifications', :notifications::boolean)
+      WHERE id = :user_id
+      RETURNING id, email, preferences
+    end
+    params
+      param name="user_id" from="user_id"
+      param name="theme" from="theme"
+      param name="notifications" from="notifications"
+    end
+    returns type="User"
+    as="updated"
+  end
+
+  step id="s2" kind="return"
+    from="updated"
+    as="_"
+  end
+end
+
+end

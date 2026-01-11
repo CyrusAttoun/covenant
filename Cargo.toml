@@ -1,3 +1,10 @@
+[package]
+name = "covenant"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/anthropics/covenant"
+
 [workspace]
 resolver = "2"
 members = [
@@ -7,6 +14,7 @@ members = [
     "crates/covenant-checker",
     "crates/covenant-graph",
     "crates/covenant-codegen",
+    "crates/covenant-storage",
     "crates/covenant-cli",
 ]
 
@@ -24,6 +32,7 @@ covenant-parser = { path = "crates/covenant-parser" }
 covenant-checker = { path = "crates/covenant-checker" }
 covenant-graph = { path = "crates/covenant-graph" }
 covenant-codegen = { path = "crates/covenant-codegen" }
+covenant-storage = { path = "crates/covenant-storage" }
 
 # External dependencies
 logos = "0.14"
@@ -35,3 +44,17 @@ wasmtime = "19"
 rustyline = "14"
 clap = { version = "4", features = ["derive"] }
 thiserror = "1.0"
+redb = "2.1"
+bincode = "1.3"
+notify = "6.1"
+walkdir = "2.4"
+
+[dependencies]
+# Re-export main crates for convenience
+covenant-ast = { workspace = true }
+covenant-lexer = { workspace = true }
+covenant-parser = { workspace = true }
+
+[dev-dependencies]
+# Dependencies for integration tests in tests/
+covenant-storage = { workspace = true }

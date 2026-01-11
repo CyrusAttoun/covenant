@@ -1,0 +1,286 @@
+// Example 19: Data Nodes and Relations
+//
+// Demonstrates:
+// - kind="data" snippets for storing documentation/knowledge
+// - Relations between data and code
+// - Notes (queryable annotations)
+// - Schema-free and schema-validated content
+// - Triple-quoted strings for multi-line content
+
+// -----------------------------------------------------------------------------
+// Schema-free data node (flexible content)
+// -----------------------------------------------------------------------------
+
+snippet id="docs.auth_overview" kind="data"
+
+  note "High-level overview of the authentication system"
+
+  note lang="es" "Descripcion general del sistema de autenticacion"
+
+  content
+    """
+    # Authentication System Overview
+
+    The authentication system validates user credentials and issues
+    JWT tokens for session management.
+
+    ## Key Components
+
+    1. **Login Handler** - Validates email/password
+    2. **Token Generator** - Creates JWT with user claims
+    3. **Token Validator** - Verifies JWT signatures
+    4. **Rate Limiter** - Prevents brute force attacks
+
+    ## Security Considerations
+
+    - Passwords hashed with bcrypt (cost factor 12)
+    - Tokens expire after 24 hours
+    - Failed logins rate-limited after 5 attempts
+    """
+  end
+
+  relations
+    rel to="auth.login" type=describes
+    rel to="auth.generate_token" type=describes
+    rel to="auth.validate_token" type=describes
+    rel to="docs.security_model" type=elaborates_on
+  end
+
+  metadata
+    author="system"
+    created="2024-01-15"
+    tags=["auth", "security", "overview"]
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Data node with optional schema (validated content)
+// -----------------------------------------------------------------------------
+
+snippet id="kb.team_member" kind="data"
+
+  note "Team member profile with validated schema"
+
+  schema
+    field name="name" type="String"
+    field name="email" type="String"
+    field name="role" type="String"
+    field name="team" type="String"
+    field name="start_date" type="String" optional
+  end
+
+  content
+    name "Alice Smith"
+    email "alice@example.com"
+    role "Senior Engineer"
+    team "Platform"
+    start_date "2023-06-01"
+  end
+
+  relations
+    rel to="kb.team_platform" type=contained_by
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Container data node (hierarchical structure)
+// -----------------------------------------------------------------------------
+
+snippet id="kb.team_platform" kind="data"
+
+  note "Platform team organization"
+
+  content
+    """
+    The Platform team builds and maintains core infrastructure
+    including authentication, databases, and deployment systems.
+    """
+  end
+
+  relations
+    // Contains team members (inverse auto-computed)
+    rel to="kb.team_member" type=contains
+    rel to="kb.engineering_org" type=contained_by
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Code snippet with relations to documentation
+// -----------------------------------------------------------------------------
+
+snippet id="auth.login" kind="fn"
+
+  note "Authenticates user with email and password"
+
+  note lang="pseudo"
+    """
+    1. Find user by email
+    2. Verify password against bcrypt hash
+    3. If valid: generate JWT token
+    4. If invalid: increment failed attempts, check rate limit
+    5. Return token or AuthError
+    """
+  end
+
+  effects
+    effect database
+  end
+
+  requires
+    req id="R-AUTH-001"
+      text "Users must authenticate with email and password"
+      priority critical
+    end
+  end
+
+  relations
+    // Links to documentation (inverse: docs.auth_overview described_by this)
+    rel from="docs.auth_overview" type=described_by
+    rel to="reqs.R-AUTH-001" type=implements
+  end
+
+  signature
+    fn name="login"
+      param name="email" type="String"
+      param name="password" type="String"
+      returns union
+        type="AuthToken"
+        type="AuthError"
+      end
+    end
+  end
+
+  body
+    // Find user by email
+    step id="s1" kind="query"
+      target="app_db"
+      select all
+      from="users"
+      where
+        equals field="email" var="email"
+      end
+      limit=1
+      as="user_result"
+    end
+
+    // Verify password
+    step id="s2" kind="call"
+      fn="crypto.verify_bcrypt"
+      arg name="hash" from="user_result.password_hash"
+      arg name="password" from="password"
+      as="is_valid"
+    end
+
+    // Branch on validation result
+    step id="s3" kind="if"
+      condition="is_valid"
+      then
+        step id="s3a" kind="call"
+          fn="auth.generate_token"
+          arg name="user_id" from="user_result.id"
+          as="token"
+        end
+        step id="s3b" kind="return"
+          from="token"
+          as="_"
+        end
+      end
+      else
+        step id="s3c" kind="return"
+          from="AuthError.InvalidCredentials"
+          as="_"
+        end
+      end
+      as="_"
+    end
+  end
+
+  tests
+    test id="T-AUTH-001" kind="unit" covers="R-AUTH-001"
+      // Test implementation would go here
+    end
+  end
+
+  metadata
+    generated_by="claude-3"
+    human_reviewed=true
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Documentation that contrasts two approaches
+// -----------------------------------------------------------------------------
+
+snippet id="docs.session_vs_jwt" kind="data"
+
+  note "Comparison of session-based vs JWT authentication"
+
+  content
+    """
+    ## Session-Based Authentication
+
+    - Server stores session state
+    - Requires session storage (Redis, database)
+    - Easy to invalidate (delete session)
+    - Not suitable for distributed systems
+
+    ## JWT Authentication
+
+    - Stateless (token contains claims)
+    - No server-side storage needed
+    - Harder to invalidate before expiry
+    - Good for microservices and APIs
+
+    ## Our Choice: JWT
+
+    We use JWT for API authentication because our system
+    is distributed across multiple services.
+    """
+  end
+
+  relations
+    rel to="docs.auth_overview" type=elaborates_on
+    rel to="docs.session_auth" type=contrasts_with
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Example of a requirement as a data node
+// -----------------------------------------------------------------------------
+
+snippet id="reqs.R-AUTH-001" kind="data"
+
+  note "Formal requirement specification"
+
+  schema
+    field name="id" type="String"
+    field name="text" type="String"
+    field name="priority" type="String"
+    field name="status" type="String"
+    field name="acceptance_criteria" type="Array<String>"
+  end
+
+  content
+    id "R-AUTH-001"
+    text "Users must authenticate with email and password"
+    priority "critical"
+    status "implemented"
+    acceptance_criteria [
+      "Valid email/password returns JWT token",
+      "Invalid credentials return AuthError",
+      "Password verified against bcrypt hash",
+      "Failed attempts tracked for rate limiting"
+    ]
+  end
+
+  relations
+    rel from="auth.login" type=implemented_by
+    rel to="docs.auth_overview" type=described_by
+  end
+
+end

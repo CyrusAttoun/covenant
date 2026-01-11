@@ -39,6 +39,8 @@ pub enum TokenKind {
     Extern,
     #[token("effect")]
     Effect,
+    #[token("effects")]
+    Effects,
     #[token("database")]
     Database,
     #[token("table")]
@@ -47,6 +49,84 @@ pub enum TokenKind {
     Ensures,
     #[token("handle")]
     Handle,
+
+    // Snippet IR keywords (Priority 1)
+    #[token("snippet")]
+    Snippet,
+    #[token("end")]
+    End,
+    #[token("id")]
+    Id,
+    #[token("kind")]
+    Kind,
+    #[token("note")]
+    Note,
+    #[token("lang")]
+    Lang,
+    #[token("signature")]
+    Signature,
+    #[token("body")]
+    Body,
+    #[token("metadata")]
+    Metadata,
+    #[token("requires")]
+    Requires,
+    #[token("tests")]
+    Tests,
+    #[token("relations")]
+    Relations,
+    #[token("content")]
+    Content,
+    #[token("schema")]
+    Schema,
+    #[token("generic")]
+    Generic,
+    #[token("collection")]
+    Collection,
+    #[token("dialect")]
+    Dialect,
+    #[token("rel")]
+    Rel,
+    #[token("types")]
+    Types,
+    #[token("fn")]
+    Fn,
+    #[token("param")]
+    Param,
+    #[token("returns")]
+    Returns,
+    #[token("step")]
+    Step,
+    #[token("op")]
+    Op,
+    #[token("input")]
+    Input,
+    #[token("var")]
+    Var,
+    #[token("lit")]
+    Lit,
+    #[token("field")]
+    Field,
+    #[token("of")]
+    Of,
+
+    // Keyword operations (Priority 1)
+    #[token("add")]
+    Add,
+    #[token("sub")]
+    Sub,
+    #[token("mul")]
+    Mul,
+    #[token("div")]
+    Div,
+    #[token("equals")]
+    Equals,
+    #[token("not")]
+    Not,
+    #[token("and")]
+    And,
+    #[token("or")]
+    Or,
 
     // Query keywords
     #[token("query")]
@@ -195,6 +275,10 @@ pub enum TokenKind {
     #[regex(r"[0-9]+\.[0-9]+")]
     Float,
 
+    // Triple-quoted strings (multi-line) - higher priority
+    #[regex(r#""""([^"]*|"[^"]|""[^"])*""""#, priority = 3)]
+    TripleString,
+
     #[regex(r#""([^"\\]|\\.)*""#)]
     String,
 
@@ -227,6 +311,7 @@ impl TokenKind {
                 | TokenKind::From
                 | TokenKind::Extern
                 | TokenKind::Effect
+                | TokenKind::Effects
                 | TokenKind::Database
                 | TokenKind::Table
                 | TokenKind::Query
@@ -234,6 +319,43 @@ impl TokenKind {
                 | TokenKind::Insert
                 | TokenKind::Update
                 | TokenKind::Delete
+                | TokenKind::Snippet
+                | TokenKind::End
+                | TokenKind::Id
+                | TokenKind::Kind
+                | TokenKind::Note
+                | TokenKind::Lang
+                | TokenKind::Signature
+                | TokenKind::Body
+                | TokenKind::Metadata
+                | TokenKind::Requires
+                | TokenKind::Tests
+                | TokenKind::Relations
+                | TokenKind::Content
+                | TokenKind::Schema
+                | TokenKind::Generic
+                | TokenKind::Collection
+                | TokenKind::Dialect
+                | TokenKind::Rel
+                | TokenKind::Types
+                | TokenKind::Fn
+                | TokenKind::Param
+                | TokenKind::Returns
+                | TokenKind::Step
+                | TokenKind::Op
+                | TokenKind::Input
+                | TokenKind::Var
+                | TokenKind::Lit
+                | TokenKind::Field
+                | TokenKind::Of
+                | TokenKind::Add
+                | TokenKind::Sub
+                | TokenKind::Mul
+                | TokenKind::Div
+                | TokenKind::Equals
+                | TokenKind::Not
+                | TokenKind::And
+                | TokenKind::Or
         )
     }
 
@@ -255,6 +377,7 @@ impl TokenKind {
             TokenKind::From => "'from'",
             TokenKind::Extern => "'extern'",
             TokenKind::Effect => "'effect'",
+            TokenKind::Effects => "'effects'",
             TokenKind::Database => "'database'",
             TokenKind::Table => "'table'",
             TokenKind::Ensures => "'ensures'",
@@ -291,6 +414,43 @@ impl TokenKind {
             TokenKind::True => "'true'",
             TokenKind::False => "'false'",
             TokenKind::None => "'none'",
+            TokenKind::Snippet => "'snippet'",
+            TokenKind::End => "'end'",
+            TokenKind::Id => "'id'",
+            TokenKind::Kind => "'kind'",
+            TokenKind::Note => "'note'",
+            TokenKind::Lang => "'lang'",
+            TokenKind::Signature => "'signature'",
+            TokenKind::Body => "'body'",
+            TokenKind::Metadata => "'metadata'",
+            TokenKind::Requires => "'requires'",
+            TokenKind::Tests => "'tests'",
+            TokenKind::Relations => "'relations'",
+            TokenKind::Content => "'content'",
+            TokenKind::Schema => "'schema'",
+            TokenKind::Generic => "'generic'",
+            TokenKind::Collection => "'collection'",
+            TokenKind::Dialect => "'dialect'",
+            TokenKind::Rel => "'rel'",
+            TokenKind::Types => "'types'",
+            TokenKind::Fn => "'fn'",
+            TokenKind::Param => "'param'",
+            TokenKind::Returns => "'returns'",
+            TokenKind::Step => "'step'",
+            TokenKind::Op => "'op'",
+            TokenKind::Input => "'input'",
+            TokenKind::Var => "'var'",
+            TokenKind::Lit => "'lit'",
+            TokenKind::Field => "'field'",
+            TokenKind::Of => "'of'",
+            TokenKind::Add => "'add'",
+            TokenKind::Sub => "'sub'",
+            TokenKind::Mul => "'mul'",
+            TokenKind::Div => "'div'",
+            TokenKind::Equals => "'equals'",
+            TokenKind::Not => "'not'",
+            TokenKind::And => "'and'",
+            TokenKind::Or => "'or'",
             TokenKind::Eq => "'='",
             TokenKind::ColonEq => "':='",
             TokenKind::Ne => "'!='",
@@ -323,6 +483,7 @@ impl TokenKind {
             TokenKind::Question => "'?'",
             TokenKind::Int => "integer",
             TokenKind::Float => "float",
+            TokenKind::TripleString => "triple-quoted string",
             TokenKind::String => "string",
             TokenKind::Ident => "identifier",
             TokenKind::Error => "error",

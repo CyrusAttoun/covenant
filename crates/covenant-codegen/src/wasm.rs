@@ -79,7 +79,7 @@ impl<'a> WasmCompiler<'a> {
                 .map(|t| vec![t])
                 .unwrap_or_default();
 
-            types.ty().function(params, results);
+            types.function(params, results);
         }
         module.section(&types);
 

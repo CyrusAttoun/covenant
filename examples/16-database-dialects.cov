@@ -1,0 +1,309 @@
+// Example 16: Database Dialects
+// Demonstrates the dialect-based query system with SQL body blocks
+
+// === Database Bindings ===
+
+snippet id="db.postgres_app" kind="database"
+
+metadata
+  type="database"
+  dialect="postgres"
+  connection="env:POSTGRES_URL"
+  version="14.0"
+end
+
+schema
+  table name="users"
+    field name="id" type="Int" primary_key=true
+    field name="email" type="String"
+    field name="created_at" type="DateTime"
+    field name="is_active" type="Bool"
+  end
+
+  table name="orders"
+    field name="id" type="Int" primary_key=true
+    field name="user_id" type="Int"
+    field name="product_id" type="Int"
+    field name="total" type="Decimal"
+    field name="created_at" type="DateTime"
+  end
+end
+
+end
+
+snippet id="db.sqlserver_analytics" kind="database"
+
+metadata
+  type="database"
+  dialect="sqlserver"
+  connection="env:SQLSERVER_URL"
+  version="2019"
+end
+
+schema
+  table name="sales_data"
+    field name="id" type="Int" primary_key=true
+    field name="region" type="String"
+    field name="sales" type="Decimal"
+    field name="quarter" type="Int"
+  end
+end
+
+end
+
+
+// === PostgreSQL Dialect Query ===
+// Full SQL power via body block
+
+snippet id="users.get_high_volume" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="get_high_volume_users"
+    param name="cutoff_date" type="DateTime"
+    returns collection of="UserOrderStats"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="postgres"
+    target="postgres_app"
+    body
+      SELECT
+        u.id,
+        u.email,
+        COUNT(o.id) as order_count,
+        SUM(o.total) as total_spent,
+        ARRAY_AGG(o.product_id) as products
+      FROM users u
+      LEFT JOIN orders o ON o.user_id = u.id
+      WHERE u.created_at > :cutoff
+        AND u.is_active = true
+      GROUP BY u.id, u.email
+      HAVING COUNT(o.id) > 5
+      ORDER BY total_spent DESC
+    end
+    params
+      param name="cutoff" from="cutoff_date"
+    end
+    returns collection of="UserOrderStats"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// === SQL Server Dialect Query ===
+// Window functions, JSON output
+
+snippet id="analytics.rank_sales" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="rank_sales_by_region"
+    param name="quarter" type="Int"
+    returns collection of="SalesRank"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="sqlserver"
+    target="sqlserver_analytics"
+    body
+      SELECT
+        region,
+        sales,
+        ROW_NUMBER() OVER (PARTITION BY region ORDER BY sales DESC) as rank_in_region,
+        SUM(sales) OVER (PARTITION BY region) as region_total,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sales) OVER (PARTITION BY region) as median_sales
+      FROM sales_data
+      WHERE quarter = @quarter
+      FOR JSON AUTO
+    end
+    params
+      param name="quarter" from="quarter"
+    end
+    returns collection of="SalesRank"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// === MySQL Dialect Query ===
+// Positional parameters
+
+snippet id="search.find_users" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="find_users_by_pattern"
+    param name="pattern" type="String"
+    param name="limit" type="Int"
+    returns collection of="User"
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="mysql"
+    target="mysql_app"
+    body
+      SELECT id, email, created_at
+      FROM users
+      WHERE email LIKE CONCAT('%', ?, '%')
+      ORDER BY created_at DESC
+      LIMIT ?
+    end
+    params
+      param name="0" from="pattern"
+      param name="1" from="limit"
+    end
+    returns collection of="User"
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// === CRUD via SQL Dialect ===
+// Insert with RETURNING clause
+
+snippet id="users.create" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="create_user"
+    param name="email" type="String"
+    returns union
+      type="User"
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="postgres"
+    target="postgres_app"
+    body
+      INSERT INTO users (email, created_at, is_active)
+      VALUES (:email, NOW(), true)
+      RETURNING id, email, created_at, is_active
+    end
+    params
+      param name="email" from="email"
+    end
+    returns type="User"
+    as="new_user"
+  end
+
+  step id="s2" kind="return"
+    from="new_user"
+    as="_"
+  end
+end
+
+end
+
+
+// === Transaction with Multiple SQL Queries ===
+
+snippet id="orders.create_with_update" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="create_order_update_user"
+    param name="user_id" type="Int"
+    param name="product_id" type="Int"
+    param name="amount" type="Decimal"
+    returns union
+      type="Order"
+      type="DbError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="transaction"
+    isolation="serializable"
+
+    step id="s1a" kind="query"
+      dialect="postgres"
+      target="postgres_app"
+      body
+        INSERT INTO orders (user_id, product_id, total, created_at)
+        VALUES (:user_id, :product_id, :amount, NOW())
+        RETURNING id, user_id, product_id, total, created_at
+      end
+      params
+        param name="user_id" from="user_id"
+        param name="product_id" from="product_id"
+        param name="amount" from="amount"
+      end
+      returns type="Order"
+      as="new_order"
+    end
+
+    step id="s1b" kind="query"
+      dialect="postgres"
+      target="postgres_app"
+      body
+        UPDATE users
+        SET order_count = order_count + 1,
+            total_spent = total_spent + :amount
+        WHERE id = :user_id
+      end
+      params
+        param name="amount" from="amount"
+        param name="user_id" from="user_id"
+      end
+      returns type="Int"
+      as="updated"
+    end
+
+    as="transaction_result"
+  end
+
+  step id="s2" kind="return"
+    from="new_order"
+    as="_"
+  end
+end
+
+end

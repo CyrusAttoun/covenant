@@ -82,7 +82,7 @@ pub enum ExprKind {
     /// Query expression: `query app_db { select * from users }`
     Query {
         target: TypePath,
-        body: QueryBody,
+        body: Box<QueryBody>,
     },
 
     /// Insert expression: `insert into app_db.users { name, email }`

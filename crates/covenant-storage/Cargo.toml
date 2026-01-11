@@ -1,0 +1,23 @@
+[package]
+name = "covenant-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+covenant-ast = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# Storage backends
+redb = "2.1"
+bincode = "1.3"
+
+# File watching
+notify = "6.1"
+walkdir = "2.4"
+
+[dev-dependencies]
+tempfile = "3.8"
