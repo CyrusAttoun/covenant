@@ -23,3 +23,5 @@ Cargo.lock
 # Claude Code working directory (keep CLAUDE.md, exclude plans)
 .claude/plans/
 .claude/implemented_plans/
+
+.covenant

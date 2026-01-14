@@ -12,7 +12,6 @@ pub use query::*;
 use std::collections::{HashMap, HashSet};
 use covenant_ast::{SymbolId, EffectId, AstMetadata};
 use covenant_checker::{SymbolTable, EffectTable};
-use serde::{Deserialize, Serialize};
 
 /// The complete reference graph for a program
 #[derive(Debug, Default)]

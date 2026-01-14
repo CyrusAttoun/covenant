@@ -8,3 +8,7 @@ covenant-ast = { workspace = true }
 covenant-checker = { workspace = true }
 wasm-encoder = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+covenant-parser = { workspace = true }
+wasmtime = { workspace = true }

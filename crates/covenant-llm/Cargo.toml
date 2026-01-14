@@ -1,0 +1,15 @@
+[package]
+name = "covenant-llm"
+version.workspace = true
+edition.workspace = true
+description = "LLM integration for Covenant language - code generation and explanation"
+
+[dependencies]
+covenant-ast = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = { workspace = true }

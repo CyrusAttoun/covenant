@@ -1,12 +1,22 @@
 // File I/O - multiple effects combined
+//
+// This example demonstrates:
+// - Multiple effects in one function (filesystem + console)
+// - Sequential function calls forming a pipeline
+// - Union return types for error handling
+// - How effects propagate from called functions
 
 snippet id="main.file_transform" kind="fn"
 
+// EFFECTS: This function needs both filesystem and console access.
+// The compiler ensures all called functions have compatible effects.
 effects
   effect filesystem
   effect console
 end
 
+// SIGNATURE: Returns either Unit (success) or IoError (failure).
+// Union types make error cases explicit in the type system.
 signature
   fn name="main"
     returns union
@@ -17,22 +27,32 @@ signature
 end
 
 body
+  // Step 1: Read the input file.
+  // read_file has effect filesystem and returns String | IoError.
+  // If IoError occurs here, it propagates to our caller.
   step id="s1" kind="call"
     fn="read_file"
     arg name="path" lit="input.txt"
     as="content"
   end
+
+  // Step 2: Transform the content (pure string operation).
+  // to_uppercase is a pure function - no effects needed.
   step id="s2" kind="call"
     fn="to_uppercase"
     arg name="s" from="content"
     as="upper"
   end
+
+  // Step 3: Write the transformed content to output file.
   step id="s3" kind="call"
     fn="write_file"
     arg name="path" lit="output.txt"
     arg name="content" from="upper"
     as="_"
   end
+
+  // Step 4: Print completion message to console.
   step id="s4" kind="call"
     fn="println"
     arg name="message" lit="Done!"

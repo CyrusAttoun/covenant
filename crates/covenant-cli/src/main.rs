@@ -8,8 +8,12 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 
 use covenant_parser::parse;
 use covenant_checker::check;
-use covenant_graph::{GraphBuilder, execute_query, parse_query, Table, Query};
+use covenant_graph::{GraphBuilder, execute_query, parse_query};
 use covenant_codegen::compile_pure;
+use covenant_llm::{
+    ExplainGenerator, ExplanationCache, LlmClient,
+    Verbosity, ExplainFormat, format_explanation,
+};
 
 #[derive(Parser)]
 #[command(name = "covenant")]
@@ -55,11 +59,26 @@ enum Commands {
         /// Input file
         file: PathBuf,
     },
+    /// Generate AI explanation for code
+    Explain {
+        /// Input file
+        file: PathBuf,
+        /// Output format (json, text, markdown, compact)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+        /// Verbosity level (minimal, standard, detailed)
+        #[arg(short, long, default_value = "standard")]
+        verbosity: String,
+        /// Disable caching
+        #[arg(long)]
+        no_cache: bool,
+    },
     /// Interactive REPL
     Repl,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
@@ -68,6 +87,9 @@ fn main() {
         Commands::Compile { file, output } => cmd_compile(&file, output),
         Commands::Query { files, query } => cmd_query(&files, &query),
         Commands::Info { file } => cmd_info(&file),
+        Commands::Explain { file, format, verbosity, no_cache } => {
+            cmd_explain(&file, &format, &verbosity, no_cache).await;
+        }
         Commands::Repl => cmd_repl(),
     }
 }
@@ -111,8 +133,8 @@ fn cmd_check(files: &[PathBuf]) {
         };
 
         match parse(&source) {
-            Ok(mut program) => {
-                match check(&mut program) {
+            Ok(program) => {
+                match check(&program) {
                     Ok(result) => {
                         let fn_count = result.symbols.functions().count();
                         let pure_count = result.symbols.functions()
@@ -155,7 +177,7 @@ fn cmd_compile(file: &PathBuf, output: Option<PathBuf>) {
         }
     };
 
-    let mut program = match parse(&source) {
+    let program = match parse(&source) {
         Ok(p) => p,
         Err(e) => {
             report_parse_error(&source, file, &e);
@@ -163,7 +185,7 @@ fn cmd_compile(file: &PathBuf, output: Option<PathBuf>) {
         }
     };
 
-    let result = match check(&mut program) {
+    let result = match check(&program) {
         Ok(r) => r,
         Err(errors) => {
             eprintln!("Type check errors:");
@@ -205,8 +227,8 @@ fn cmd_query(files: &[PathBuf], query_str: &str) {
         };
 
         match parse(&source) {
-            Ok(mut program) => {
-                match check(&mut program) {
+            Ok(program) => {
+                match check(&program) {
                     Ok(result) => {
                         all_programs.push((program, result));
                     }
@@ -266,7 +288,7 @@ fn cmd_info(file: &PathBuf) {
         }
     };
 
-    let mut program = match parse(&source) {
+    let program = match parse(&source) {
         Ok(p) => p,
         Err(e) => {
             report_parse_error(&source, file, &e);
@@ -274,7 +296,7 @@ fn cmd_info(file: &PathBuf) {
         }
     };
 
-    let result = match check(&mut program) {
+    let result = match check(&program) {
         Ok(r) => r,
         Err(errors) => {
             eprintln!("Type check errors:");
@@ -309,6 +331,69 @@ fn cmd_info(file: &PathBuf) {
 
     println!();
     println!("Legend: ○ = pure, ● = effectful");
+}
+
+async fn cmd_explain(file: &PathBuf, format: &str, verbosity: &str, no_cache: bool) {
+    // Read and parse the file
+    let source = match fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let program = match parse(&source) {
+        Ok(p) => p,
+        Err(e) => {
+            report_parse_error(&source, file, &e);
+            std::process::exit(1);
+        }
+    };
+
+    // Parse verbosity and format
+    let verbosity: Verbosity = verbosity.parse().unwrap_or_default();
+    let format: ExplainFormat = format.parse().unwrap_or_default();
+
+    // Create LLM client
+    let llm = match LlmClient::new() {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            eprintln!("Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable");
+            std::process::exit(1);
+        }
+    };
+
+    // Create generator with optional cache
+    let generator = if no_cache {
+        ExplainGenerator::new(llm)
+    } else {
+        let cache = ExplanationCache::new();
+        ExplainGenerator::with_cache(llm, cache)
+    };
+
+    // Generate explanations for all snippets in the file
+    let snippets = match &program {
+        covenant_ast::Program::Snippets { snippets, .. } => snippets,
+        covenant_ast::Program::Legacy { .. } => {
+            eprintln!("Error: explain command only works with snippet-based files");
+            eprintln!("The file uses legacy declaration syntax");
+            std::process::exit(1);
+        }
+    };
+
+    for snippet in snippets {
+        match generator.explain(snippet, &source, verbosity).await {
+            Ok(explanation) => {
+                let output = format_explanation(&explanation, format);
+                println!("{}", output);
+            }
+            Err(e) => {
+                eprintln!("Error generating explanation for {}: {}", snippet.id, e);
+            }
+        }
+    }
 }
 
 fn cmd_repl() {
@@ -371,8 +456,8 @@ fn cmd_repl() {
                                 println!("No code loaded. Use :load <file>");
                             } else {
                                 match parse(&loaded_source) {
-                                    Ok(mut program) => {
-                                        match check(&mut program) {
+                                    Ok(program) => {
+                                        match check(&program) {
                                             Ok(result) => {
                                                 println!("✓ Type check passed");
                                                 let fn_count = result.symbols.functions().count();
@@ -400,8 +485,8 @@ fn cmd_repl() {
                                 println!("No code loaded. Use :load <file>");
                             } else {
                                 match parse(&loaded_source) {
-                                    Ok(mut program) => {
-                                        match check(&mut program) {
+                                    Ok(program) => {
+                                        match check(&program) {
                                             Ok(result) => {
                                                 println!("Functions:");
                                                 for func in result.symbols.functions() {
@@ -432,7 +517,7 @@ fn cmd_repl() {
                     // Try to parse as expression or statement
                     let wrapped = format!("_repl() {{ {} }}", trimmed);
                     match parse(&wrapped) {
-                        Ok(program) => {
+                        Ok(_program) => {
                             println!("Parsed successfully");
                             // TODO: evaluate
                         }

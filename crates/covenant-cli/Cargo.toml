@@ -14,7 +14,9 @@ covenant-parser = { workspace = true }
 covenant-checker = { workspace = true }
 covenant-graph = { workspace = true }
 covenant-codegen = { workspace = true }
+covenant-llm = { workspace = true }
 clap = { workspace = true }
 ariadne = { workspace = true }
 serde_json = { workspace = true }
 rustyline = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

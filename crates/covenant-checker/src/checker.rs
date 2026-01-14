@@ -18,15 +18,16 @@ impl Checker {
         }
     }
 
-    pub fn check_program(&mut self, program: &mut Program) -> Result<CheckResult, Vec<CheckError>> {
+    /// Check legacy declarations (for Program::Legacy)
+    pub fn check_declarations(&mut self, declarations: &[Declaration]) -> Result<CheckResult, Vec<CheckError>> {
         // First pass: collect all type and function declarations
-        for decl in &program.declarations {
+        for decl in declarations {
             self.collect_declaration(decl);
         }
 
         // Second pass: type check function bodies
-        for decl in &mut program.declarations {
-            self.check_declaration(decl);
+        for decl in declarations {
+            self.check_declaration_ref(decl);
         }
 
         if self.errors.is_empty() {
@@ -37,6 +38,49 @@ impl Checker {
         } else {
             Err(std::mem::take(&mut self.errors))
         }
+    }
+
+    fn check_declaration_ref(&mut self, decl: &Declaration) {
+        match &decl.kind {
+            DeclarationKind::Function(f) => {
+                self.check_function_ref(f);
+            }
+            _ => {}
+        }
+    }
+
+    fn check_function_ref(&mut self, func: &FunctionDecl) {
+        self.symbols.enter_scope();
+
+        // Add parameters to scope
+        for param in &func.params {
+            self.symbols.define(
+                param.name.clone(),
+                SymbolKind::Parameter,
+                self.resolve_type(&param.ty),
+            );
+        }
+
+        // Add imported symbols to scope
+        for import in &func.imports {
+            for name in &import.names {
+                self.symbols.define(
+                    name.clone(),
+                    SymbolKind::Function {
+                        params: vec![],
+                        effects: vec![import.source.clone()],
+                    },
+                    ResolvedType::Unknown,
+                );
+            }
+        }
+
+        // Check body
+        for stmt in &func.body.statements {
+            self.check_statement(stmt);
+        }
+
+        self.symbols.exit_scope();
     }
 
     fn collect_declaration(&mut self, decl: &Declaration) {
@@ -149,50 +193,6 @@ impl Checker {
                 // Handle in a separate pass if needed
             }
         }
-    }
-
-    fn check_declaration(&mut self, decl: &mut Declaration) {
-        match &mut decl.kind {
-            DeclarationKind::Function(f) => {
-                self.check_function(f);
-            }
-            _ => {}
-        }
-    }
-
-    fn check_function(&mut self, func: &mut FunctionDecl) {
-        self.symbols.enter_scope();
-
-        // Add parameters to scope
-        for param in &func.params {
-            self.symbols.define(
-                param.name.clone(),
-                SymbolKind::Parameter,
-                self.resolve_type(&param.ty),
-            );
-        }
-
-        // Add imported symbols to scope
-        for import in &func.imports {
-            for name in &import.names {
-                // For now, just register as a function with effects
-                self.symbols.define(
-                    name.clone(),
-                    SymbolKind::Function {
-                        params: vec![],
-                        effects: vec![import.source.clone()],
-                    },
-                    ResolvedType::Unknown,
-                );
-            }
-        }
-
-        // Check body
-        for stmt in &func.body.statements {
-            self.check_statement(stmt);
-        }
-
-        self.symbols.exit_scope();
     }
 
     fn check_statement(&mut self, stmt: &Statement) {
@@ -474,7 +474,7 @@ impl Checker {
             (ResolvedType::Bool, ResolvedType::Bool) => true,
             (ResolvedType::String, ResolvedType::String) => true,
             (ResolvedType::None, ResolvedType::None) => true,
-            (ResolvedType::Optional(inner), ResolvedType::None) => true,
+            (ResolvedType::Optional(_inner), ResolvedType::None) => true,
             (ResolvedType::Optional(e), ResolvedType::Optional(f)) => self.types_compatible(e, f),
             (ResolvedType::Optional(e), f) => self.types_compatible(e, f),
             (ResolvedType::List(e), ResolvedType::List(f)) => self.types_compatible(e, f),

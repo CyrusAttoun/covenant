@@ -55,6 +55,25 @@ impl<'a> Parser<'a> {
         kinds.contains(&self.peek())
     }
 
+    /// Check if current token can be used as an identifier (including contextual keywords)
+    fn at_ident_like(&self) -> bool {
+        matches!(self.peek(), TokenKind::Ident | TokenKind::Id | TokenKind::Type)
+    }
+
+    /// Consume a token that can be used as an identifier (including contextual keywords)
+    fn consume_ident_like(&mut self) -> Result<String, ParseError> {
+        match self.peek() {
+            TokenKind::Ident => self.consume_text(TokenKind::Ident),
+            TokenKind::Id => { self.advance(); Ok("id".to_string()) }
+            TokenKind::Type => { self.advance(); Ok("type".to_string()) }
+            _ => Err(ParseError::unexpected(
+                "identifier",
+                self.peek(),
+                self.span(),
+            ))
+        }
+    }
+
     fn consume(&mut self, kind: TokenKind) -> Result<&Token, ParseError> {
         if self.at(kind) {
             Ok(self.advance())
@@ -278,9 +297,9 @@ impl<'a> Parser<'a> {
 
     fn parse_field_decls(&mut self) -> Result<Vec<FieldDecl>, ParseError> {
         let mut fields = Vec::new();
-        while self.at(TokenKind::Ident) {
+        while self.at_ident_like() {
             let start = self.span();
-            let name = self.consume_text(TokenKind::Ident)?;
+            let name = self.consume_ident_like()?;
             self.consume(TokenKind::Colon)?;
             let ty = self.parse_type()?;
 

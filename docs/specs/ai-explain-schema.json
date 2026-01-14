@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://covenant-lang.org/schemas/ai-explain.json",
+  "title": "Covenant AI Explanation Schema",
+  "description": "Schema for AI-generated explanations of Covenant code",
+  "type": "object",
+  "required": ["snippet_id", "kind", "summary", "generated_at"],
+  "properties": {
+    "snippet_id": {
+      "type": "string",
+      "description": "The full snippet ID (e.g., 'auth.login')",
+      "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*$"
+    },
+    "kind": {
+      "type": "string",
+      "description": "The snippet kind",
+      "enum": ["fn", "struct", "enum", "module", "database", "extern", "test", "data"]
+    },
+    "summary": {
+      "type": "string",
+      "description": "One-sentence natural language summary of what this snippet does",
+      "maxLength": 500
+    },
+    "detailed_description": {
+      "type": "string",
+      "description": "Multi-paragraph explanation for documentation",
+      "maxLength": 5000
+    },
+    "parameters": {
+      "type": "array",
+      "description": "Explanations for each parameter (for fn kind)",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Parameter name"
+          },
+          "type": {
+            "type": "string",
+            "description": "Parameter type"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this parameter represents"
+          },
+          "constraints": {
+            "type": "string",
+            "description": "Any constraints or valid values"
+          }
+        }
+      }
+    },
+    "return_value": {
+      "type": "object",
+      "description": "Explanation of the return value",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Return type"
+        },
+        "description": {
+          "type": "string",
+          "description": "What the return value represents"
+        },
+        "success_cases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "When success values are returned"
+        },
+        "error_cases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "When error values are returned"
+        }
+      }
+    },
+    "effects_summary": {
+      "type": "string",
+      "description": "Human-readable summary of effects (e.g., 'Reads from database, writes to filesystem')"
+    },
+    "effects": {
+      "type": "array",
+      "description": "List of effects with explanations",
+      "items": {
+        "type": "object",
+        "required": ["effect", "description"],
+        "properties": {
+          "effect": {
+            "type": "string",
+            "description": "Effect name"
+          },
+          "description": {
+            "type": "string",
+            "description": "How this effect is used"
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Effect parameters if any"
+          }
+        }
+      }
+    },
+    "step_explanations": {
+      "type": "array",
+      "description": "Per-step explanations for body steps",
+      "items": {
+        "type": "object",
+        "required": ["step_id", "what"],
+        "properties": {
+          "step_id": {
+            "type": "string",
+            "description": "The step ID (e.g., 's1', 's2a')"
+          },
+          "what": {
+            "type": "string",
+            "description": "What this step does"
+          },
+          "why": {
+            "type": "string",
+            "description": "Why this step is needed"
+          },
+          "produces": {
+            "type": "string",
+            "description": "What type/value this step produces"
+          },
+          "data_flow": {
+            "type": "string",
+            "description": "Where inputs come from and outputs go"
+          }
+        }
+      }
+    },
+    "algorithm_summary": {
+      "type": "string",
+      "description": "High-level algorithm description for complex functions"
+    },
+    "data_flow_summary": {
+      "type": "string",
+      "description": "Summary of how data flows through the function"
+    },
+    "requirements_covered": {
+      "type": "array",
+      "description": "Requirements this snippet implements",
+      "items": {
+        "type": "object",
+        "properties": {
+          "req_id": { "type": "string" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "tests_summary": {
+      "type": "string",
+      "description": "Summary of test coverage"
+    },
+    "related_snippets": {
+      "type": "array",
+      "description": "Related snippets for context",
+      "items": {
+        "type": "object",
+        "properties": {
+          "snippet_id": { "type": "string" },
+          "relationship": {
+            "type": "string",
+            "enum": ["calls", "called_by", "uses_type", "similar_to", "documented_by"]
+          }
+        }
+      }
+    },
+    "usage_example": {
+      "type": "string",
+      "description": "Example of how to call/use this snippet"
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Important caveats or warnings",
+      "items": { "type": "string" }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this explanation was generated"
+    },
+    "generator_version": {
+      "type": "string",
+      "description": "Version of the explanation generator"
+    },
+    "snippet_hash": {
+      "type": "string",
+      "description": "Hash of the snippet content for cache invalidation"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confidence score for this explanation"
+    }
+  }
+}

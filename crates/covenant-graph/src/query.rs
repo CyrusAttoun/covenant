@@ -1,7 +1,5 @@
 //! Query interface for the reference graph
 
-use std::collections::HashSet;
-use covenant_ast::SymbolId;
 use covenant_checker::{SymbolTable, Symbol, SymbolKind};
 use crate::ReferenceGraph;
 use serde::{Deserialize, Serialize};
@@ -124,7 +122,7 @@ fn evaluate_filter(
                 false
             }
         }
-        Filter::HasEffect(effect_name) => {
+        Filter::HasEffect(_effect_name) => {
             if let Some(effects) = graph.effects.get(&symbol.id) {
                 // TODO: Look up effect by name
                 !effects.is_empty()

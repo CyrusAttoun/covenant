@@ -21,8 +21,15 @@ impl<'a> GraphBuilder<'a> {
     }
 
     pub fn build(mut self, program: &Program) -> ReferenceGraph {
-        for decl in &program.declarations {
-            self.visit_declaration(decl);
+        match program {
+            Program::Legacy { declarations, .. } => {
+                for decl in declarations {
+                    self.visit_declaration(decl);
+                }
+            }
+            Program::Snippets { .. } => {
+                // TODO: Build graph from snippet-mode programs
+            }
         }
         self.graph
     }

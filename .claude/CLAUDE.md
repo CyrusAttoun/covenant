@@ -18,11 +18,29 @@ A machine-first programming language designed for LLM generation and navigation.
 
 ---
 
+## Human-Readability Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [Syntax Reference](../docs/syntax-reference.md) | Complete keyword reference organized by category |
+| [Reading Guide](../docs/reading-guide.md) | How to understand Covenant syntax as a human |
+| [Patterns Catalog](../docs/patterns.md) | Common patterns and idioms with examples |
+| [Syntax Examples](../docs/syntax-examples.md) | Minimal examples of every construct (cheat sheet) |
+| [Tutorial](../docs/tutorial.md) | Step-by-step beginner's guide |
+
+---
+
 ## Specifications
 
 | Spec | Purpose |
 |------|---------|
 | [LLM Code Generation](../docs/specs/llm-code-generation.md) | LLM-based code generation system with compiler validation and self-correction |
+| [AI Explain Schema](../docs/specs/ai-explain-schema.json) | JSON schema for AI-generated code explanations |
+| [Explain Generator](../docs/specs/explain-generator.md) | How explanations are generated from AST |
+| [Explain Display](../docs/specs/explain-display.md) | How explanations render in CLI, IDE, and docs |
+| [Generated Comments](../docs/specs/generated-comments.md) | Where auto-generated comments are injected |
+| [Comment Generator](../docs/specs/comment-generator.md) | Algorithm for auto-generating comments |
+| [Comment Workflow](../docs/specs/comment-workflow.md) | When comments are generated in the workflow |
 
 ---
 

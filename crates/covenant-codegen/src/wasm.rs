@@ -6,11 +6,12 @@ use wasm_encoder::{
     Instruction, Module, TypeSection, ValType,
 };
 use covenant_ast::*;
-use covenant_checker::{SymbolTable, SymbolKind, ResolvedType};
-use crate::{CodegenError, IrType, IrBinOp, IrCmpOp};
+use covenant_checker::SymbolTable;
+use crate::CodegenError;
 
 /// WASM compiler
 pub struct WasmCompiler<'a> {
+    #[allow(dead_code)]
     symbols: &'a SymbolTable,
     /// Function name to index mapping
     function_indices: HashMap<String, u32>,
@@ -30,18 +31,12 @@ impl<'a> WasmCompiler<'a> {
         }
     }
 
-    /// Compile the entire program
-    pub fn compile(&mut self, program: &Program) -> Result<Vec<u8>, CodegenError> {
-        self.compile_pure_only(program)
-    }
-
-    /// Compile only pure functions
-    pub fn compile_pure_only(&mut self, program: &Program) -> Result<Vec<u8>, CodegenError> {
+    /// Compile legacy declarations to WASM
+    pub fn compile_legacy(&mut self, declarations: &[Declaration]) -> Result<Vec<u8>, CodegenError> {
         let mut module = Module::new();
 
         // Collect pure functions
-        let pure_functions: Vec<&FunctionDecl> = program
-            .declarations
+        let pure_functions: Vec<&FunctionDecl> = declarations
             .iter()
             .filter_map(|d| {
                 if let DeclarationKind::Function(f) = &d.kind {

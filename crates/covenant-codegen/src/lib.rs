@@ -4,12 +4,14 @@
 
 mod ir;
 mod wasm;
+mod snippet_wasm;
 
 pub use ir::*;
 pub use wasm::*;
+pub use snippet_wasm::SnippetWasmCompiler;
 
-use covenant_ast::*;
-use covenant_checker::{SymbolTable, SymbolKind, ResolvedType};
+use covenant_ast::Program;
+use covenant_checker::SymbolTable;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -29,12 +31,19 @@ pub enum CodegenError {
 
 /// Compile a program to WASM
 pub fn compile(program: &Program, symbols: &SymbolTable) -> Result<Vec<u8>, CodegenError> {
-    let mut compiler = WasmCompiler::new(symbols);
-    compiler.compile(program)
+    match program {
+        Program::Legacy { declarations, .. } => {
+            let mut compiler = WasmCompiler::new(symbols);
+            compiler.compile_legacy(declarations)
+        }
+        Program::Snippets { snippets, .. } => {
+            let mut compiler = SnippetWasmCompiler::new(symbols);
+            compiler.compile_snippets(snippets)
+        }
+    }
 }
 
 /// Compile only pure functions to WASM
 pub fn compile_pure(program: &Program, symbols: &SymbolTable) -> Result<Vec<u8>, CodegenError> {
-    let mut compiler = WasmCompiler::new(symbols);
-    compiler.compile_pure_only(program)
+    compile(program, symbols)
 }

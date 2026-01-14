@@ -1,7 +1,21 @@
 // Pure Functions - no effects section means no side effects
-// Compiler verifies no effectful calls
+//
+// This example demonstrates:
+// - Pure functions (no effects section)
+// - Compute steps for arithmetic operations
+// - Recursive function calls
+// - SSA form (Static Single Assignment)
+//
+// The compiler verifies that pure functions make no effectful calls.
+
+// -----------------------------------------------------------------------------
+// Simple Addition
+// -----------------------------------------------------------------------------
 
 snippet id="math.add" kind="fn"
+
+// No effects section = pure function.
+// The compiler guarantees this function has no side effects.
 
 signature
   fn name="add"
@@ -12,12 +26,19 @@ signature
 end
 
 body
+  // Compute step: performs arithmetic using keyword operators.
+  // - op=add: the operation to perform (not + symbol!)
+  // - input var="a": first operand from parameter "a"
+  // - input var="b": second operand from parameter "b"
+  // - as="result": bind output to "result"
   step id="s1" kind="compute"
     op=add
     input var="a"
     input var="b"
     as="result"
   end
+
+  // Return the computed result.
   step id="s2" kind="return"
     from="result"
     as="_"
@@ -27,7 +48,16 @@ end
 end
 
 
+// -----------------------------------------------------------------------------
+// Recursive Factorial
+// -----------------------------------------------------------------------------
+
 snippet id="math.factorial" kind="fn"
+
+// Pure recursive function demonstrating:
+// - Comparison operators (less_eq)
+// - Conditional branching (if/then/else)
+// - Recursive calls
 
 signature
   fn name="factorial"
@@ -37,38 +67,48 @@ signature
 end
 
 body
+  // Check base case: n <= 1
   step id="s1" kind="compute"
     op=less_eq
     input var="n"
     input lit=1
     as="is_base"
   end
+
+  // Branch on the base case condition
   step id="s2" kind="if"
     condition="is_base"
     then
+      // Base case: return 1
       step id="s2a" kind="return"
         lit=1
         as="_"
       end
     end
     else
+      // Recursive case: compute n-1
       step id="s2b" kind="compute"
         op=sub
         input var="n"
         input lit=1
         as="n_minus_1"
       end
+
+      // Recursive call: factorial(n-1)
       step id="s2c" kind="call"
         fn="factorial"
         arg name="n" from="n_minus_1"
         as="sub_result"
       end
+
+      // Compute: n * factorial(n-1)
       step id="s2d" kind="compute"
         op=mul
         input var="n"
         input var="sub_result"
         as="result"
       end
+
       step id="s2e" kind="return"
         from="result"
         as="_"
@@ -81,7 +121,13 @@ end
 end
 
 
+// -----------------------------------------------------------------------------
+// Simple Double
+// -----------------------------------------------------------------------------
+
 snippet id="math.double" kind="fn"
+
+// Minimal pure function: multiply by 2
 
 signature
   fn name="double"
@@ -97,6 +143,7 @@ body
     input lit=2
     as="result"
   end
+
   step id="s2" kind="return"
     from="result"
     as="_"

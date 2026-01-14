@@ -15,6 +15,7 @@ members = [
     "crates/covenant-graph",
     "crates/covenant-codegen",
     "crates/covenant-storage",
+    "crates/covenant-llm",
     "crates/covenant-cli",
 ]
 
@@ -33,6 +34,7 @@ covenant-checker = { path = "crates/covenant-checker" }
 covenant-graph = { path = "crates/covenant-graph" }
 covenant-codegen = { path = "crates/covenant-codegen" }
 covenant-storage = { path = "crates/covenant-storage" }
+covenant-llm = { path = "crates/covenant-llm" }
 
 # External dependencies
 logos = "0.14"
@@ -58,3 +60,8 @@ covenant-parser = { workspace = true }
 [dev-dependencies]
 # Dependencies for integration tests in tests/
 covenant-storage = { workspace = true }
+covenant-checker = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
