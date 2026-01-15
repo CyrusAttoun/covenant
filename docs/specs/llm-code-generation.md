@@ -491,10 +491,10 @@ The test suite shall be expanded when:
 ## References
 
 **Related Documentation**:
-- [DESIGN.md](../../DESIGN.md) - Covenant language design
-- [grammar.ebnf](../../grammar.ebnf) - Formal grammar specification
-- [ERROR_CODES.md](../../ERROR_CODES.md) - Compiler error catalog
-- [QUERY_SEMANTICS.md](../../QUERY_SEMANTICS.md) - Query system semantics
+- [DESIGN.md](../design/DESIGN.md) - Covenant language design
+- [grammar.ebnf](../design/grammar.ebnf) - Formal grammar specification
+- [ERROR_CODES.md](../design/ERROR_CODES.md) - Compiler error catalog
+- [QUERY_SEMANTICS.md](../design/QUERY_SEMANTICS.md) - Query system semantics
 
 **Implementation Files**:
 - [llm-context/](../../llm-context/) - Complete implementation

@@ -113,12 +113,33 @@ query project { select * from functions where is_exported = false and called_by 
 
 ## Documentation
 
-| Doc | Purpose |
-|-----|---------|
-| [DESIGN.md](DESIGN.md) | Philosophy, four-layer model, core decisions |
-| [grammar.ebnf](grammar.ebnf) | Formal syntax definition |
+### Quick Start by Goal
+
+**"I want to learn Covenant"**
+1. [Tutorial](docs/guide/tutorial.md) - Hello World and basics
+2. [Reading Guide](docs/guide/reading-guide.md) - How to read Covenant code
+3. [Syntax Examples](docs/guide/syntax-examples.md) - Cheat sheet
+4. [Patterns](docs/guide/patterns.md) - Common idioms
+
+**"I want to understand the language design"**
+1. [Design](docs/design/DESIGN.md) - Philosophy and four-layer model
+2. [Query Semantics](docs/design/QUERY_SEMANTICS.md) - Query system spec
+3. [Compiler](docs/design/COMPILER.md) - Compilation phases
+4. [Grammar](docs/design/grammar.ebnf) - Formal syntax
+
+**"I want to build LLM integrations"**
+1. [LLM Code Generation](docs/specs/llm-code-generation.md) - Generation system
+2. [Explain Generator](docs/specs/explain-generator.md) - Explanation algorithm
+3. [Comment Generator](docs/specs/comment-generator.md) - Auto-documentation
+
+### Document Index
+
+| Directory | Purpose |
+|-----------|---------|
+| [docs/guide/](docs/guide/) | Learning materials for language users |
+| [docs/design/](docs/design/) | Language design and compiler specifications |
+| [docs/specs/](docs/specs/) | LLM and tooling integration specifications |
 | [examples/](examples/) | Example `.cov` source files |
-| [prior-art.md](prior-art.md) | Lessons from Austral and Koka |
 
 ---
 

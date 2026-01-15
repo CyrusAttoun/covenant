@@ -20,8 +20,10 @@ Cargo.lock
 # Dependencies (when package manager exists)
 /node_modules/
 
-# Claude Code working directory (keep CLAUDE.md, exclude plans)
+# Claude Code stuff
 .claude/plans/
 .claude/implemented_plans/
+tmpclaude*cwd
+nul
 
 .covenant

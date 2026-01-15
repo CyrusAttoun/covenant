@@ -4,43 +4,35 @@ A machine-first programming language designed for LLM generation and navigation.
 
 ---
 
-## Documents
+## Documentation
 
-| Doc | Purpose |
-|-----|---------|
-| [DESIGN.md](../DESIGN.md) | Philosophy, four-layer model, core design, compiler semantics |
-| [grammar.ebnf](../grammar.ebnf) | Formal syntax definition (machine-parseable) |
-| [ERROR_CODES.md](../ERROR_CODES.md) | Comprehensive error catalog with auto-fix strategies |
-| [COMPILER.md](../COMPILER.md) | Detailed compilation phase specifications |
-| [QUERY_SEMANTICS.md](../QUERY_SEMANTICS.md) | Formal operational semantics for queries |
+### Quick Start by Goal
+
+**"I want to learn Covenant"**
+1. [Tutorial](../docs/guide/tutorial.md) - Hello World and basics
+2. [Reading Guide](../docs/guide/reading-guide.md) - How to read Covenant code
+3. [Syntax Examples](../docs/guide/syntax-examples.md) - Cheat sheet
+4. [Patterns](../docs/guide/patterns.md) - Common idioms
+
+**"I want to understand the language design"**
+1. [Design](../docs/design/DESIGN.md) - Philosophy and four-layer model
+2. [Query Semantics](../docs/design/QUERY_SEMANTICS.md) - Query system spec
+3. [Compiler](../docs/design/COMPILER.md) - Compilation phases
+4. [Grammar](../docs/design/grammar.ebnf) - Formal syntax
+
+**"I want to build LLM integrations"**
+1. [LLM Code Generation](../docs/specs/llm-code-generation.md) - Generation system
+2. [Explain Generator](../docs/specs/explain-generator.md) - Explanation algorithm
+3. [Comment Generator](../docs/specs/comment-generator.md) - Auto-documentation
+
+### Document Index
+
+| Directory | Purpose |
+|-----------|---------|
+| [docs/guide/](../docs/guide/) | Learning materials for language users |
+| [docs/design/](../docs/design/) | Language design and compiler specifications |
+| [docs/specs/](../docs/specs/) | LLM and tooling integration specifications |
 | [examples/](../examples/) | Example `.cov` programs |
-| [prior-art.md](../prior-art.md) | Lessons from Austral, Koka, and LLM-native design |
-
----
-
-## Human-Readability Documentation
-
-| Doc | Purpose |
-|-----|---------|
-| [Syntax Reference](../docs/syntax-reference.md) | Complete keyword reference organized by category |
-| [Reading Guide](../docs/reading-guide.md) | How to understand Covenant syntax as a human |
-| [Patterns Catalog](../docs/patterns.md) | Common patterns and idioms with examples |
-| [Syntax Examples](../docs/syntax-examples.md) | Minimal examples of every construct (cheat sheet) |
-| [Tutorial](../docs/tutorial.md) | Step-by-step beginner's guide |
-
----
-
-## Specifications
-
-| Spec | Purpose |
-|------|---------|
-| [LLM Code Generation](../docs/specs/llm-code-generation.md) | LLM-based code generation system with compiler validation and self-correction |
-| [AI Explain Schema](../docs/specs/ai-explain-schema.json) | JSON schema for AI-generated code explanations |
-| [Explain Generator](../docs/specs/explain-generator.md) | How explanations are generated from AST |
-| [Explain Display](../docs/specs/explain-display.md) | How explanations render in CLI, IDE, and docs |
-| [Generated Comments](../docs/specs/generated-comments.md) | Where auto-generated comments are injected |
-| [Comment Generator](../docs/specs/comment-generator.md) | Algorithm for auto-generating comments |
-| [Comment Workflow](../docs/specs/comment-workflow.md) | When comments are generated in the workflow |
 
 ---
 
