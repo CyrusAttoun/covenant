@@ -144,7 +144,7 @@ body
     as="server"
   end
   step id="s2" kind="call"
-    fn="println"
+    fn="console.println"
     arg name="message" lit="Listening on :8080"
     as="_"
   end
@@ -156,7 +156,7 @@ body
   step id="s4" kind="for"
     var="req" in="request_stream"
     step id="s4a" kind="call"
-      fn="handle_request"
+      fn="http.handle_request"
       arg name="req" from="req"
       as="response"
     end

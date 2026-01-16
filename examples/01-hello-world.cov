@@ -26,11 +26,11 @@ end
 // Each step has an id, kind, and output binding (as="...").
 body
   // Call the println function to output a message.
-  // - fn="println": the function to call
+  // - fn="console.println": the function to call (fully-qualified snippet ID)
   // - arg name="message" lit="...": pass a literal string argument
   // - as="_": discard the return value (Unit)
   step id="s1" kind="call"
-    fn="println"
+    fn="console.println"
     arg name="message" lit="Hello, world!"
     as="_"
   end

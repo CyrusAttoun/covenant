@@ -7,7 +7,8 @@ use clap::{Parser, Subcommand};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 
 use covenant_parser::parse;
-use covenant_checker::check;
+use covenant_symbols::build_symbol_graph;
+use covenant_checker::{check, check_effects, EffectError};
 use covenant_graph::{GraphBuilder, execute_query, parse_query};
 use covenant_codegen::compile_pure;
 use covenant_llm::{
@@ -73,6 +74,14 @@ enum Commands {
         #[arg(long)]
         no_cache: bool,
     },
+    /// Analyze effect declarations and compute transitive closures
+    Effects {
+        /// Input file(s) to analyze
+        files: Vec<PathBuf>,
+        /// Show only violations (errors)
+        #[arg(long)]
+        violations_only: bool,
+    },
     /// Interactive REPL
     Repl,
 }
@@ -90,6 +99,7 @@ async fn main() {
         Commands::Explain { file, format, verbosity, no_cache } => {
             cmd_explain(&file, &format, &verbosity, no_cache).await;
         }
+        Commands::Effects { files, violations_only } => cmd_effects(&files, violations_only),
         Commands::Repl => cmd_repl(),
     }
 }
@@ -134,21 +144,43 @@ fn cmd_check(files: &[PathBuf]) {
 
         match parse(&source) {
             Ok(program) => {
+                // Phase 2: Symbol graph building
+                let symbol_result = match build_symbol_graph(&program) {
+                    Ok(result) => {
+                        // Report deferred errors (undefined references) as warnings
+                        for err in &result.deferred_errors {
+                            eprintln!("  warning: {}", err);
+                        }
+                        result
+                    }
+                    Err(errors) => {
+                        eprintln!("✗ {} - {} symbol errors:", file.display(), errors.len());
+                        for err in &errors {
+                            eprintln!("  {}: {}", err.code(), err);
+                        }
+                        all_ok = false;
+                        continue;
+                    }
+                };
+
+                // Phase 3-4: Type checking
                 match check(&program) {
                     Ok(result) => {
                         let fn_count = result.symbols.functions().count();
                         let pure_count = result.symbols.functions()
                             .filter(|s| result.effects.is_pure(s.id))
                             .count();
+                        let symbol_count = symbol_result.graph.len();
                         println!(
-                            "✓ {} - {} functions ({} pure)",
+                            "✓ {} - {} symbols, {} functions ({} pure)",
                             file.display(),
+                            symbol_count,
                             fn_count,
                             pure_count
                         );
                     }
                     Err(errors) => {
-                        eprintln!("✗ {} - {} errors:", file.display(), errors.len());
+                        eprintln!("✗ {} - {} type errors:", file.display(), errors.len());
                         for err in errors {
                             eprintln!("  {}", err);
                         }
@@ -331,6 +363,121 @@ fn cmd_info(file: &PathBuf) {
 
     println!();
     println!("Legend: ○ = pure, ● = effectful");
+}
+
+fn cmd_effects(files: &[PathBuf], violations_only: bool) {
+    let mut all_ok = true;
+    let mut total_violations = 0;
+
+    for file in files {
+        let source = match fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error reading {}: {}", file.display(), e);
+                all_ok = false;
+                continue;
+            }
+        };
+
+        let program = match parse(&source) {
+            Ok(p) => p,
+            Err(e) => {
+                report_parse_error(&source, file, &e);
+                all_ok = false;
+                continue;
+            }
+        };
+
+        // Build symbol graph (Phase 2)
+        let symbol_result = match build_symbol_graph(&program) {
+            Ok(result) => result,
+            Err(errors) => {
+                eprintln!("✗ {} - {} symbol errors:", file.display(), errors.len());
+                for err in &errors {
+                    eprintln!("  {}: {}", err.code(), err);
+                }
+                all_ok = false;
+                continue;
+            }
+        };
+
+        // Run effect checking (Phase 3)
+        let result = check_effects(&symbol_result.graph);
+        total_violations += result.violations.len();
+
+        if !violations_only {
+            println!("File: {}", file.display());
+            println!();
+
+            // Group by pure/effectful
+            let mut pure_fns = Vec::new();
+            let mut effectful_fns = Vec::new();
+
+            for (name, closure) in &result.closures {
+                if closure.is_pure {
+                    pure_fns.push((name, closure));
+                } else {
+                    effectful_fns.push((name, closure));
+                }
+            }
+
+            if !pure_fns.is_empty() {
+                println!("Pure functions:");
+                for (name, closure) in &pure_fns {
+                    let status = if closure.computed.is_empty() { "✓" } else { "✗" };
+                    println!("  {} {}", status, name);
+                }
+                println!();
+            }
+
+            if !effectful_fns.is_empty() {
+                println!("Effectful functions:");
+                for (name, closure) in &effectful_fns {
+                    let declared: Vec<_> = closure.declared.iter().collect();
+                    let computed: Vec<_> = closure.computed.iter().collect();
+                    let status = if closure.declared == closure.computed { "✓" } else { "✗" };
+                    println!("  {} {} [declared: {:?}, computed: {:?}]", status, name, declared, computed);
+                }
+                println!();
+            }
+        }
+
+        // Report violations
+        if !result.violations.is_empty() {
+            all_ok = false;
+            eprintln!("Effect violations in {}:", file.display());
+            for error in &result.violations {
+                match error {
+                    EffectError::PureCallsEffectful { function, callee, effects, span } => {
+                        eprintln!(
+                            "  E-EFFECT-001 [{}:{}]: pure function `{}` calls effectful `{}` (effects: {:?})",
+                            span.start, span.end, function, callee, effects
+                        );
+                    }
+                    EffectError::MissingEffect { function, missing, source_callee, span } => {
+                        eprintln!(
+                            "  E-EFFECT-002 [{}:{}]: function `{}` missing effect declarations {:?} (from `{}`)",
+                            span.start, span.end, function, missing, source_callee
+                        );
+                    }
+                }
+            }
+            eprintln!();
+        }
+    }
+
+    // Summary
+    if violations_only {
+        if total_violations == 0 {
+            println!("No effect violations found");
+        } else {
+            eprintln!("{} effect violation(s) found", total_violations);
+        }
+    }
+
+    if !all_ok {
+        std::process::exit(1);
+    }
 }
 
 async fn cmd_explain(file: &PathBuf, format: &str, verbosity: &str, no_cache: bool) {

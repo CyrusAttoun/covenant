@@ -21,7 +21,7 @@ end
 
 body
   step id="s1" kind="call"
-    fn="get"
+    fn="http.get"
     arg name="url" from="url"
     as="response"
   end
@@ -30,7 +30,7 @@ body
     as="body"
   end
   step id="s3" kind="call"
-    fn="write_file"
+    fn="fs.write_file"
     arg name="path" from="path"
     arg name="content" from="body"
     as="_"

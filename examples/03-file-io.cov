@@ -31,7 +31,7 @@ body
   // read_file has effect filesystem and returns String | IoError.
   // If IoError occurs here, it propagates to our caller.
   step id="s1" kind="call"
-    fn="read_file"
+    fn="fs.read_file"
     arg name="path" lit="input.txt"
     as="content"
   end
@@ -46,7 +46,7 @@ body
 
   // Step 3: Write the transformed content to output file.
   step id="s3" kind="call"
-    fn="write_file"
+    fn="fs.write_file"
     arg name="path" lit="output.txt"
     arg name="content" from="upper"
     as="_"
@@ -54,7 +54,7 @@ body
 
   // Step 4: Print completion message to console.
   step id="s4" kind="call"
-    fn="println"
+    fn="console.println"
     arg name="message" lit="Done!"
     as="_"
   end

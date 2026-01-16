@@ -65,7 +65,7 @@ impl SnippetChecker {
     /// Register a function's signature (first pass)
     fn register_function_signature(&mut self, snippet: &Snippet) {
         // Extract signature info without holding references
-        let (fn_name, params, return_type, effects) = {
+        let (fn_name, snippet_id, params, return_type, effects) = {
             let sig = match find_function_signature(snippet) {
                 Some(s) => s,
                 None => return,
@@ -81,17 +81,26 @@ impl SnippetChecker {
 
             let effects = collect_snippet_effects(snippet);
 
-            (sig.name.clone(), params, return_type, effects)
+            (sig.name.clone(), snippet.id.clone(), params, return_type, effects)
         };
 
-        // Now mutate without any borrows
+        // Register by short name (for backwards compatibility)
         self.symbols.define(
             fn_name.clone(),
-            SymbolKind::Function { params: params.clone(), effects },
+            SymbolKind::Function { params: params.clone(), effects: effects.clone() },
             return_type.clone(),
         );
+        self.function_returns.insert(fn_name.clone(), return_type.clone());
 
-        self.function_returns.insert(fn_name, return_type);
+        // Also register by snippet ID (fully-qualified name) for canonical call syntax
+        if snippet_id != fn_name {
+            self.symbols.define(
+                snippet_id.clone(),
+                SymbolKind::Function { params, effects },
+                return_type.clone(),
+            );
+            self.function_returns.insert(snippet_id, return_type);
+        }
     }
 
     /// Check a function snippet

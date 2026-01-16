@@ -11,6 +11,7 @@ members = [
     "crates/covenant-ast",
     "crates/covenant-lexer",
     "crates/covenant-parser",
+    "crates/covenant-symbols",
     "crates/covenant-checker",
     "crates/covenant-graph",
     "crates/covenant-codegen",
@@ -30,6 +31,7 @@ repository = "https://github.com/anthropics/covenant"
 covenant-ast = { path = "crates/covenant-ast" }
 covenant-lexer = { path = "crates/covenant-lexer" }
 covenant-parser = { path = "crates/covenant-parser" }
+covenant-symbols = { path = "crates/covenant-symbols" }
 covenant-checker = { path = "crates/covenant-checker" }
 covenant-graph = { path = "crates/covenant-graph" }
 covenant-codegen = { path = "crates/covenant-codegen" }

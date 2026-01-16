@@ -22,22 +22,22 @@ end
 
 body
   step id="s1" kind="call"
-    fn="println"
+    fn="console.println"
     arg name="message" lit="Reading file..."
     as="_"
   end
   step id="s2" kind="call"
-    fn="read_file"
+    fn="fs.read_file"
     arg name="path" from="path"
     as="content"
   end
   step id="s3" kind="call"
-    fn="println"
+    fn="console.println"
     arg name="message" lit="Uploading..."
     as="_"
   end
   step id="s4" kind="call"
-    fn="post"
+    fn="http.post"
     arg name="url" from="url"
     arg name="body" from="content"
     as="response"
@@ -53,7 +53,7 @@ body
     as="message"
   end
   step id="s7" kind="call"
-    fn="println"
+    fn="console.println"
     arg name="message" from="message"
     as="_"
   end

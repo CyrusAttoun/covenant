@@ -57,12 +57,12 @@ end
 
 body
   step id="s1" kind="call"
-    fn="format_date"
+    fn="utils.format_date"
     arg name="d" from="d"
     as="formatted"
   end
   step id="s2" kind="call"
-    fn="println"
+    fn="console.println"
     arg name="message" from="formatted"
     as="_"
   end

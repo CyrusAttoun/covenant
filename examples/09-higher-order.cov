@@ -164,13 +164,13 @@ body
     as="nums"
   end
   step id="s2" kind="call"
-    fn="map"
+    fn="list.map"
     arg name="list" from="nums"
     arg name="f" from="double"
     as="doubled"
   end
   step id="s3" kind="call"
-    fn="filter"
+    fn="list.filter"
     arg name="list" from="doubled"
     arg name="pred" from="is_even"
     as="evens"

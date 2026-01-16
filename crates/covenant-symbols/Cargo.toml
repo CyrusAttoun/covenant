@@ -1,12 +1,15 @@
 [package]
-name = "covenant-checker"
+name = "covenant-symbols"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Symbol graph builder for the Covenant compiler (Phase 2)"
 
 [dependencies]
 covenant-ast = { workspace = true }
-covenant-symbols = { path = "../covenant-symbols" }
 thiserror = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 covenant-parser = { workspace = true }

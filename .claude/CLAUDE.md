@@ -110,6 +110,30 @@ end
 | `x && y` | `op=and input var="x" input var="y"` |
 | `!x` | `op=not input var="x"` |
 
+### Call Steps
+
+Function calls use **fully-qualified snippet IDs** (not short names):
+
+```
+step id="s1" kind="call"
+  fn="console.println"           // Must be the snippet ID
+  arg name="message" lit="Hello"
+  as="_"
+end
+
+step id="s2" kind="call"
+  fn="math.factorial"            // Recursive calls also use snippet ID
+  arg name="n" from="n_minus_1"
+  as="result"
+end
+```
+
+**Rationale:** Using canonical snippet IDs ensures:
+- Unambiguous references (no scope resolution needed)
+- One valid way to write every call (canonical form)
+- Simpler compiler (exact string matching)
+- Better LLM code generation (no implicit context)
+
 ### Query System
 
 Two paths: **Covenant dialect** (default) for Covenant types, **SQL dialects** for external databases.

@@ -96,7 +96,7 @@ body
 
       // Recursive call: factorial(n-1)
       step id="s2c" kind="call"
-        fn="factorial"
+        fn="math.factorial"
         arg name="n" from="n_minus_1"
         as="sub_result"
       end
