@@ -1,0 +1,252 @@
+// Structured Concurrency - parallel I/O without threads or async/await
+
+// Example 1: Parallel HTTP requests
+// Fetch multiple resources simultaneously, wait for all to complete
+
+snippet id="dashboard.fetch_data" kind="fn"
+
+effects
+  effect std.concurrent
+  effect network
+end
+
+signature
+  fn name="fetch_data"
+    param name="user_id" type="String"
+    returns struct
+      field name="user" type="User"
+      field name="orders" type="List<Order>"
+      field name="recommendations" type="List<Product>"
+    end
+  end
+end
+
+body
+  // All three HTTP requests execute in parallel
+  step id="s1" kind="std.concurrent.parallel"
+    branch id="b1"
+      step id="b1.1" kind="call"
+        fn="http.get"
+        arg name="url" from="user_url"
+        as="user_response"
+      end
+      step id="b1.2" kind="call"
+        fn="json.parse"
+        arg name="text" from="user_response.body"
+        as="user"
+      end
+    end
+
+    branch id="b2"
+      step id="b2.1" kind="call"
+        fn="http.get"
+        arg name="url" from="orders_url"
+        as="orders_response"
+      end
+      step id="b2.2" kind="call"
+        fn="json.parse"
+        arg name="text" from="orders_response.body"
+        as="orders"
+      end
+    end
+
+    branch id="b3"
+      step id="b3.1" kind="call"
+        fn="http.get"
+        arg name="url" from="recs_url"
+        as="recs_response"
+      end
+      step id="b3.2" kind="call"
+        fn="json.parse"
+        arg name="text" from="recs_response.body"
+        as="recommendations"
+      end
+    end
+
+    as="parallel_results"
+  end
+
+  // Results are collected in declaration order (deterministic)
+  step id="s2" kind="construct"
+    struct
+      field name="user" from="parallel_results.user"
+      field name="orders" from="parallel_results.orders"
+      field name="recommendations" from="parallel_results.recommendations"
+    end
+    as="dashboard_data"
+  end
+
+  step id="s3" kind="return"
+    from="dashboard_data"
+    as="_"
+  end
+end
+
+end
+
+
+// Example 2: Error handling strategies
+
+snippet id="resilient.fetch_all" kind="fn"
+
+effects
+  effect std.concurrent
+  effect network
+end
+
+signature
+  fn name="fetch_all"
+    param name="urls" type="List<String>"
+    returns struct
+      field name="successes" type="List<Response>"
+      field name="failures" type="List<FetchError>"
+    end
+  end
+end
+
+body
+  // collect_all waits for everything, doesn't cancel on error
+  step id="s1" kind="std.concurrent.parallel"
+    on_error="collect_all"
+
+    branch id="b1"
+      step id="b1.1" kind="call"
+        fn="http.get"
+        arg name="url" from="urls[0]"
+        as="r1"
+      end
+    end
+
+    branch id="b2"
+      step id="b2.1" kind="call"
+        fn="http.get"
+        arg name="url" from="urls[1]"
+        as="r2"
+      end
+    end
+
+    branch id="b3"
+      step id="b3.1" kind="call"
+        fn="http.get"
+        arg name="url" from="urls[2]"
+        as="r3"
+      end
+    end
+
+    as="results"  // Contains both successes and errors
+  end
+
+  step id="s2" kind="return"
+    from="results"
+    as="_"
+  end
+end
+
+end
+
+
+// Example 3: Race pattern - first response wins
+
+snippet id="cache.get_with_fallback" kind="fn"
+
+effects
+  effect std.concurrent
+  effect database
+  effect network
+end
+
+signature
+  fn name="get_with_fallback"
+    param name="key" type="String"
+    returns union
+      type="CacheEntry"
+      type="NotFound"
+    end
+  end
+end
+
+body
+  // Race: try cache first, but also start DB query
+  // Return whichever completes first
+  step id="s1" kind="std.concurrent.race"
+    branch id="b1"
+      step id="b1.1" kind="call"
+        fn="redis.get"
+        arg name="key" from="key"
+        as="cached"
+      end
+    end
+
+    branch id="b2"
+      step id="b2.1" kind="call"
+        fn="postgres.query"
+        arg name="sql" lit="SELECT * FROM entries WHERE key = $1"
+        arg name="params" from="key"
+        as="db_result"
+      end
+    end
+
+    as="winner"  // Whichever branch completes first
+  end
+
+  step id="s2" kind="return"
+    from="winner"
+    as="_"
+  end
+end
+
+end
+
+
+// Example 4: Timeout handling
+
+snippet id="api.fetch_with_timeout" kind="fn"
+
+effects
+  effect std.concurrent
+  effect network
+end
+
+signature
+  fn name="fetch_with_timeout"
+    param name="url" type="String"
+    returns union
+      type="Response"
+      type="TimeoutError"
+      type="HttpError"
+    end
+  end
+end
+
+body
+  step id="s1" kind="std.concurrent.parallel"
+    timeout=5s
+    on_timeout="cancel"
+
+    branch id="b1"
+      step id="b1.1" kind="call"
+        fn="http.get"
+        arg name="url" from="url"
+        as="response"
+      end
+    end
+
+    as="result"
+  end
+
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+
+// Key points:
+// 1. No threads, no async/await keywords
+// 2. Concurrency is scoped - you always wait for results
+// 3. Results are deterministic - collected in declaration order
+// 4. Branches are isolated - no shared mutable state
+// 5. Error handling is explicit per-block
+// 6. Effect std.concurrent required to use parallel/race

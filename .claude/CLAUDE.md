@@ -293,6 +293,82 @@ symbol_metadata = {
 }
 ```
 
+### Structured Concurrency
+
+Parallel I/O without threads or async/await. Import via `effect std.concurrent`.
+
+```
+effects
+  effect std.concurrent
+  effect network
+end
+
+body
+  step id="s1" kind="std.concurrent.parallel"
+    branch id="b1"
+      step id="b1.1" kind="call"
+        fn="http.get"
+        arg name="url" lit="https://api.example.com/users"
+        as="users"
+      end
+    end
+    branch id="b2"
+      step id="b2.1" kind="call"
+        fn="http.get"
+        arg name="url" lit="https://api.example.com/products"
+        as="products"
+      end
+    end
+    as="results"
+  end
+end
+```
+
+**Key points:**
+- `std.concurrent.parallel` — execute branches concurrently, wait for all
+- `std.concurrent.race` — execute branches, return first to complete
+- Results in declaration order (deterministic)
+- Branches isolated — no shared mutable state
+- `on_error="fail_fast"` (default), `"collect_all"`, or `"ignore_errors"`
+- `timeout=5s` with `on_timeout="cancel"` or `"return_partial"`
+
+### Extensible Kinds
+
+Kinds can be imported via effects. Custom kinds defined with `kind="effect-kind"`:
+
+```
+snippet id="myorg.custom" kind="effect-kind"
+
+kinds
+  kind name="my_construct"
+    structure
+      section name="item" multiple=true required=true
+        contains kind="step"
+      end
+    end
+    compile_to="myorg_runtime"
+  end
+end
+
+effects_required
+  effect myorg.runtime
+end
+
+end
+```
+
+Use via: `effect myorg.custom` then `kind="myorg.custom.my_construct"`
+
+See [EXTENSIBLE_KINDS.md](../docs/design/EXTENSIBLE_KINDS.md) for full specification.
+
+---
+
+## Plan Files
+
+Plans for this project go in `.claude/plans/` with human-readable filenames (e.g., `query-optimization-plan.md`).
+
+When a plan is fully implemented, move it to `.claude/implemented_plans/`.
+
 ---
 
 ## Status

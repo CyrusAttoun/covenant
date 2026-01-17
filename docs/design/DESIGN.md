@@ -926,14 +926,42 @@ This enables AI planning — knowing a call is idempotent, slow, or requires spe
 
 ## 13. WASM Compilation
 
-### Target Runtime
-- **Sandboxed execution** — memory-safe by default
-- **Capability-constrained** — WASI for controlled host access
-- **Metered execution** — fuel-based limits
+### Target: WASI 0.2 Component Model
+
+Covenant compiles to **WASI 0.2 Component Model** modules for maximum portability:
+
+- **Sandboxed execution** — memory-safe by default (WASM guarantee)
+- **Capability-constrained** — effects map to WIT interface imports
+- **Metered execution** — runtime fuel systems (Wasmtime, etc.)
 - **Deterministic** — reproducible execution
-- **Portable** — runs anywhere WASM runs
+- **Portable** — runs on any WASI 0.2 runtime (Wasmtime, Wasmer, wazero)
+
+### Effect to Interface Mapping
+
+| Covenant Effect | WIT Interface |
+|-----------------|---------------|
+| `effect network` | `wasi:http/outgoing-handler` |
+| `effect filesystem` | `wasi:filesystem/types` |
+| `effect storage` | `wasi:keyvalue/store` |
+| `effect random` | `wasi:random/random` |
+| `effect database` | `covenant:database/sql` (custom) |
+| `effect std.concurrent` | `future<T>`, subtasks (WASI 0.3, Nov 2025) |
+
+**Custom interfaces:** Database and project query capabilities use Covenant-defined WIT interfaces since WASI equivalents are immature or nonexistent.
+
+### Compilation Targets
+
+```bash
+# WASI 0.2 Component Model (recommended for portability)
+covenant compile --target=wasi app.cov
+
+# JavaScript targets (for browser/Node.js environments)
+covenant compile --target=browser app.cov
+covenant compile --target=node app.cov
+```
 
 ### Compilation Pipeline
+
 ```
 IR (source)
     ↓
@@ -947,8 +975,18 @@ IR (source)
     ↓
   WASM Emitter
     ↓
-  .wasm Module
+  ┌─────────────────────────────────────┐
+  │ --target=wasi                        │
+  │   → WASM Component (.wasm)           │
+  │   → WIT interface imports            │
+  ├─────────────────────────────────────┤
+  │ --target=browser/node                │
+  │   → Core WASM module (.wasm)         │
+  │   → Generated JS glue (runtime.js)   │
+  └─────────────────────────────────────┘
 ```
+
+See [WASI_INTEGRATION.md](WASI_INTEGRATION.md) for detailed WIT definitions and host requirements.
 
 ---
 
@@ -1504,7 +1542,189 @@ end
 
 ---
 
-## 19. Human-Readable Views (Future)
+## 19. Structured Concurrency
+
+### 19.1 Design Philosophy
+
+Covenant does **not** support multi-threading, async/await keywords, or shared mutable state. Instead, it provides **structured concurrency** through extensible kinds imported via the effects system.
+
+**Why no threads/async:**
+- Threads introduce non-determinism (violates core principle)
+- Async/await creates "colored functions" problem
+- Shared mutable state requires locks (complexity)
+- LLMs struggle to reason about concurrent code
+
+**Why structured concurrency:**
+- Declarative — one pattern to learn
+- Deterministic — results always in declaration order
+- Scoped — concurrency is contained, not viral
+- Effect-tracked — explicit capability declaration
+
+### 19.2 The std.concurrent Effect
+
+Import concurrency primitives via the effect system:
+
+```
+effects
+  effect std.concurrent
+  effect network
+end
+```
+
+This makes available:
+- `std.concurrent.parallel` — execute branches concurrently, wait for all
+- `std.concurrent.race` — execute branches concurrently, return first to complete
+
+### 19.3 Parallel Execution
+
+```
+step id="s1" kind="std.concurrent.parallel"
+  branch id="b1"
+    step id="b1.1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://api.example.com/users"
+      as="users"
+    end
+  end
+
+  branch id="b2"
+    step id="b2.1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://api.example.com/products"
+      as="products"
+    end
+  end
+
+  as="results"  // Struct with users, products fields
+end
+```
+
+**Semantics:**
+- All branches start concurrently
+- Block completes when ALL branches complete
+- Results collected in declaration order (deterministic)
+- Branches are isolated — no shared mutable state
+
+### 19.4 Error Handling
+
+```
+step id="s1" kind="std.concurrent.parallel"
+  on_error="fail_fast"  // default
+  ...
+end
+```
+
+| Strategy | Behavior |
+|----------|----------|
+| `fail_fast` | Cancel remaining branches on first error (default) |
+| `collect_all` | Wait for all branches, collect errors into result |
+| `ignore_errors` | Replace failed branches with `none` |
+
+### 19.5 Timeouts
+
+```
+step id="s1" kind="std.concurrent.parallel"
+  timeout=5s
+  on_timeout="cancel"
+  ...
+end
+```
+
+### 19.6 Race Pattern
+
+Return the first branch to complete:
+
+```
+step id="s1" kind="std.concurrent.race"
+  branch id="b1"
+    step id="b1.1" kind="call"
+      fn="cache.get"
+      arg name="key" from="user_id"
+      as="cached"
+    end
+  end
+
+  branch id="b2"
+    step id="b2.1" kind="call"
+      fn="db.query"
+      arg name="id" from="user_id"
+      as="fresh"
+    end
+  end
+
+  as="first_result"
+end
+```
+
+### 19.7 What's NOT Supported
+
+- **Fire-and-forget** — All concurrent work is scoped; you always wait for results
+- **Inter-branch communication** — Branches cannot share state or signal each other
+- **Unbounded spawning** — No "spawn and forget" pattern
+- **Callbacks** — No callback-based async APIs
+
+See [EXTENSIBLE_KINDS.md](EXTENSIBLE_KINDS.md) for how `std.concurrent` is defined as an effect-kind.
+
+---
+
+## 20. Extensible Kinds
+
+### 20.1 Core Concept
+
+The `kind` attribute in snippets and steps is **extensible**. While core kinds (`fn`, `data`, `extern`) are built-in, additional kinds can be imported via the effects system.
+
+### 20.2 Importing Kinds
+
+```
+effects
+  effect std.concurrent  // makes parallel, race kinds available
+end
+
+body
+  step id="s1" kind="std.concurrent.parallel"
+    ...
+  end
+end
+```
+
+### 20.3 Namespacing
+
+Kinds are fully qualified by their effect: `effect.kindname`
+
+- `std.concurrent.parallel` — standard library
+- `std.testing.mock` — standard library
+- `acme.workflow.approval` — organization-specific
+
+### 20.4 Defining Custom Kinds
+
+Use `kind="effect-kind"` to define new kinds:
+
+```
+snippet id="myorg.custom" kind="effect-kind"
+
+kinds
+  kind name="my_construct"
+    structure
+      section name="item" multiple=true required=true
+        contains kind="step"
+      end
+    end
+    compile_to="myorg_runtime"
+  end
+end
+
+effects_required
+  effect myorg.runtime
+end
+
+end
+```
+
+See [EXTENSIBLE_KINDS.md](EXTENSIBLE_KINDS.md) for full specification.
+
+---
+
+## 21. Human-Readable Views (Future)
 
 The IR is the source of truth. Human-readable views are derived:
 
@@ -1519,7 +1739,7 @@ These are display transformations, not source formats. The IR remains canonical.
 
 ---
 
-## 20. What This Is and Isn't
+## 22. What This Is and Isn't
 
 **Is:**
 - A machine-first intermediate representation
@@ -1534,7 +1754,7 @@ These are display transformations, not source formats. The IR remains canonical.
 
 ---
 
-## 21. North Star
+## 23. North Star
 
 > **AI generates canonical IR.**
 > **Compilers derive queryable graphs.**
@@ -1550,5 +1770,6 @@ These are display transformations, not source formats. The IR remains canonical.
 - [COMPILER.md](COMPILER.md) — Detailed compilation phase specifications
 - [QUERY_SEMANTICS.md](QUERY_SEMANTICS.md) — Formal operational semantics for queries
 - [STORAGE.md](STORAGE.md) — Storage provider interface specification
+- [EXTENSIBLE_KINDS.md](EXTENSIBLE_KINDS.md) — Pluggable kind system specification
 - [prior-art.md](prior-art.md) — Lessons from Austral, Koka, and LLM-native design
 - [examples/](examples/) — Example programs in IR syntax

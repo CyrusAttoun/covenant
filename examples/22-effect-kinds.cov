@@ -1,0 +1,192 @@
+// Effect-Kind Definitions - how to define new step kinds
+
+// Example 1: The std.concurrent effect-kind
+// This is what the standard library defines (shown for illustration)
+
+snippet id="std.concurrent" kind="effect-kind"
+
+note "Structured concurrency primitives for parallel I/O"
+
+kinds
+  kind name="parallel"
+    note "Execute branches concurrently, wait for all to complete"
+
+    structure
+      section name="branch" multiple=true required=true
+        contains kind="step"
+      end
+      field name="on_error" type="Enum"
+        values=["fail_fast", "collect_all", "ignore_errors"]
+        default="fail_fast"
+      end
+      field name="timeout" type="Duration" optional=true
+      field name="on_timeout" type="Enum"
+        values=["cancel", "return_partial"]
+        default="cancel"
+      end
+    end
+
+    semantics
+      results_order="declaration"
+      branch_isolation=true
+    end
+
+    compile_to="host_parallel"
+  end
+
+  kind name="race"
+    note "Execute branches concurrently, return first to complete"
+
+    structure
+      section name="branch" multiple=true required=true
+        contains kind="step"
+      end
+      field name="timeout" type="Duration" optional=true
+    end
+
+    semantics
+      results_order="completion"
+      branch_isolation=true
+      cancel_losers=true
+    end
+
+    compile_to="host_race"
+  end
+end
+
+effects_required
+  effect runtime
+end
+
+end
+
+
+// Example 2: Custom organization-specific kind
+// A multi-stage approval workflow for regulated industries
+
+snippet id="acme.approval" kind="effect-kind"
+
+note "Multi-stage approval workflow for regulated industries"
+
+kinds
+  kind name="workflow"
+    note "Execute approval stages sequentially with role-based authorization"
+
+    structure
+      section name="stage" multiple=true required=true
+        field name="approver_role" type="String" required=true
+        field name="timeout" type="Duration" optional=true
+        contains kind="step"
+      end
+      field name="on_rejection" type="Enum"
+        values=["abort", "escalate", "retry"]
+        default="abort"
+      end
+      field name="audit_trail" type="Bool"
+        default=true
+      end
+    end
+
+    semantics
+      execution_order="sequential"
+      requires_auth=true
+    end
+
+    compile_to="acme_workflow_engine"
+  end
+end
+
+effects_required
+  effect acme.workflow_runtime
+end
+
+end
+
+
+// Example 3: Using a custom kind
+// This shows how to use the acme.approval.workflow kind
+
+snippet id="purchase.approve_order" kind="fn"
+
+effects
+  effect acme.approval
+  effect database
+end
+
+signature
+  fn name="approve_order"
+    param name="order_id" type="Int"
+    param name="amount" type="Decimal"
+    returns union
+      type="ApprovedOrder"
+      type="RejectedOrder"
+      type="WorkflowError"
+    end
+  end
+end
+
+body
+  // Fetch the order first
+  step id="s1" kind="query"
+    target="orders_db"
+    select all
+    from="orders"
+    where
+      equals field="id" var="order_id"
+    end
+    limit=1
+    as="order"
+  end
+
+  // Multi-stage approval workflow
+  step id="s2" kind="acme.approval.workflow"
+    on_rejection="escalate"
+    audit_trail=true
+
+    stage id="stage1" approver_role="team_lead"
+      step id="stage1.1" kind="call"
+        fn="acme.get_approval"
+        arg name="order" from="order"
+        arg name="level" lit="team_lead"
+        as="team_approval"
+      end
+    end
+
+    stage id="stage2" approver_role="finance" timeout=24h
+      step id="stage2.1" kind="call"
+        fn="acme.get_approval"
+        arg name="order" from="order"
+        arg name="level" lit="finance"
+        as="finance_approval"
+      end
+    end
+
+    stage id="stage3" approver_role="legal"
+      step id="stage3.1" kind="call"
+        fn="acme.get_approval"
+        arg name="order" from="order"
+        arg name="level" lit="legal"
+        as="legal_approval"
+      end
+    end
+
+    as="approval_result"
+  end
+
+  step id="s3" kind="return"
+    from="approval_result"
+    as="_"
+  end
+end
+
+end
+
+
+// Key points:
+// 1. effect-kind snippets define new step kinds
+// 2. kinds section declares each kind with its structure and semantics
+// 3. structure defines required/optional sections and fields
+// 4. compile_to specifies the code generation strategy
+// 5. effects_required declares what effects users of this kind need
+// 6. To use extended kinds, declare the effect and use fully-qualified kind name
+// 7. No grammar changes needed - kinds are data, not syntax

@@ -549,6 +549,102 @@ for symbol_id, symbol in symbol_table.items():
                       f"Pure function {symbol_id} calls effectful {callee_id}")
 ```
 
+**Step 5: Load and Validate Extended Kinds**
+```python
+# Extensible kinds are defined in effect-kind snippets
+# They must be loaded before validating kind usage
+
+# Step 5a: Load kind definitions from effect-kind snippets
+kind_registry = {}  # Maps "effect.kindname" -> kind_definition
+
+for symbol_id, symbol in symbol_table.items():
+    snippet = ast.snippets[symbol_id]
+
+    if snippet.kind == "effect-kind":
+        effect_name = snippet.id  # e.g., "std.concurrent"
+
+        for kind_def in snippet.sections.kinds:
+            full_kind_name = f"{effect_name}.{kind_def.name}"  # e.g., "std.concurrent.parallel"
+            kind_registry[full_kind_name] = {
+                "name": kind_def.name,
+                "effect": effect_name,
+                "structure": kind_def.structure,
+                "semantics": kind_def.semantics,
+                "compile_to": kind_def.compile_to
+            }
+
+# Step 5b: Validate extended kind usage
+CORE_STEP_KINDS = {
+    "compute", "call", "query", "bind", "return",
+    "if", "match", "for", "insert", "update", "delete",
+    "transaction", "update_snippet", "update_all",
+    "traverse", "construct"
+}
+
+for symbol_id, symbol in symbol_table.items():
+    snippet = ast.snippets[symbol_id]
+    declared_effects = set(symbol.effects)
+
+    for step in extract_all_steps(snippet.sections.body):
+        step_kind = step.kind
+
+        # Skip core kinds
+        if step_kind in CORE_STEP_KINDS:
+            continue
+
+        # Extended kind - must be in registry
+        if step_kind not in kind_registry:
+            error(E_KIND_001, f"Unknown kind '{step_kind}'")
+            continue
+
+        # Extended kind - effect must be declared
+        kind_def = kind_registry[step_kind]
+        required_effect = kind_def["effect"]
+
+        if required_effect not in declared_effects:
+            error(E_KIND_002,
+                  f"Kind '{step_kind}' requires 'effect {required_effect}'")
+
+        # Validate step body against kind structure
+        validate_kind_structure(step, kind_def["structure"])
+```
+
+**Step 5c: Validate Kind Structure**
+```python
+def validate_kind_structure(step, structure):
+    """Validate step body matches kind definition structure."""
+
+    for section_def in structure.sections:
+        section_name = section_def.name
+        found_sections = get_sections_by_name(step, section_name)
+
+        # Check required
+        if section_def.required and len(found_sections) == 0:
+            error(E_KIND_004,
+                  f"Kind requires section '{section_name}'")
+
+        # Check multiple
+        if not section_def.multiple and len(found_sections) > 1:
+            error(E_KIND_003,
+                  f"Kind only allows one '{section_name}' section")
+
+    for field_def in structure.fields:
+        field_name = field_def.name
+        field_value = get_field_value(step, field_name)
+
+        # Check required
+        if field_def.required and field_value is None:
+            if field_def.default is None:
+                error(E_KIND_004,
+                      f"Kind requires field '{field_name}'")
+
+        # Check allowed values
+        if field_value is not None and field_def.values:
+            if field_value not in field_def.values:
+                error(E_KIND_005,
+                      f"Invalid value '{field_value}' for field '{field_name}'")
+```
+
 ### Error Handling
 
 **E-EFFECT-001: Pure Function Calls Effectful Code**
@@ -562,6 +658,28 @@ for symbol_id, symbol in symbol_table.items():
 **E-EFFECT-003: Effect Transitivity Violation**
 - Complex case: effects propagate through multiple call levels
 - Auto-fix: Suggest adding effect to intermediate functions (ranked by confidence)
+
+**E-KIND-001: Unknown Kind**
+- Step uses a kind that is neither core nor registered via effect import
+- Auto-fix: Add missing effect import (confidence: 1.0)
+
+**E-KIND-002: Missing Effect Import**
+- Extended kind used without declaring the required effect
+- Auto-fix: Add effect declaration to snippet's effects section
+
+**E-KIND-003: Invalid Kind Structure**
+- Step body doesn't match the structure defined in the kind definition
+- Report which sections/fields are invalid
+- Auto-fix: Interactive — suggest adding missing sections
+
+**E-KIND-004: Missing Required Section**
+- Kind definition specifies required section that's missing from step
+- Auto-fix: Insert placeholder section (confidence: 0.5)
+
+**E-KIND-005: Invalid Field Value**
+- Field value doesn't match allowed values in kind definition
+- Report allowed values and suggest closest match
+- Auto-fix: Replace with closest valid value (confidence: 0.9)
 
 ### Performance Targets
 
@@ -1088,12 +1206,74 @@ Generate WebAssembly binary from optimized IR.
 Optimized IR from Phase 6
 
 ### Output
-`.wasm` binary module
+Depends on compilation target:
+- `--target=wasi` → WASI 0.2 Component (`.wasm`)
+- `--target=browser/node` → Core WASM module (`.wasm`) + JavaScript glue (`runtime.js`)
+
+### 7.1 WASI Target (Component Model)
+
+For `--target=wasi`, emit a **WASI 0.2 Component**:
+
+```wit
+// Generated component world
+package covenant:app;
+
+world app {
+  // WASI 0.2 standard imports
+  import wasi:http/outgoing-handler;
+  import wasi:filesystem/types;
+  import wasi:clocks/monotonic-clock;
+
+  // Covenant custom imports (for database, project queries)
+  import covenant:database/sql;
+
+  // Exported functions
+  export main-process: func(x: s32) -> s32;
+}
+```
+
+**Component Binary Structure:**
+```
+┌─────────────────────────────────────┐
+│ Component                            │
+├─────────────────────────────────────┤
+│ Imports (from WIT world)             │
+│  - wasi:http/outgoing-handler        │
+│  - covenant:database/sql             │
+├─────────────────────────────────────┤
+│ Core Module                          │
+│  (func $main_process ...)            │
+│  (memory ...)                        │
+├─────────────────────────────────────┤
+│ Exports (canonical ABI)              │
+│  - main-process                      │
+└─────────────────────────────────────┘
+```
+
+**Effect → WIT Import Mapping:**
+
+| Covenant Effect | WIT Interface |
+|-----------------|---------------|
+| `effect network` | `wasi:http/outgoing-handler` |
+| `effect filesystem` | `wasi:filesystem/types` |
+| `effect storage` | `wasi:keyvalue/store` |
+| `effect random` | `wasi:random/random` |
+| `effect database` | `covenant:database/sql` |
+| `effect std.concurrent` | Error (requires WASI 0.3) |
+
+See [WASI_INTEGRATION.md](WASI_INTEGRATION.md) for custom WIT definitions.
+
+### 7.2 JavaScript Targets
+
+For `--target=browser` and `--target=node`, emit core WASM with JS glue:
 
 **Module Structure:**
 ```
 (module
-  (import "wasi_snapshot_preview1" "fd_write" ...)
+  ;; Imports from generated runtime.js
+  (import "env" "http_get" (func $http_get ...))
+  (import "env" "db_query" (func $db_query ...))
+
   (memory (export "memory") 1)
 
   ;; Generated from snippet id="main.process"
@@ -1109,7 +1289,26 @@ Optimized IR from Phase 6
 )
 ```
 
-### Compilation Strategy
+**Generated runtime.js:**
+```javascript
+// Auto-generated for --target=node
+import { request } from 'undici';
+
+const imports = {
+  env: {
+    http_get: async (urlPtr, urlLen) => { /* ... */ },
+    db_query: async (sqlPtr, sqlLen, paramsPtr) => { /* ... */ },
+  }
+};
+
+export async function instantiate() {
+  const wasmBuffer = await fs.readFile('app.wasm');
+  const wasm = await WebAssembly.instantiate(wasmBuffer, imports);
+  return wasm.instance.exports;
+}
+```
+
+### 7.3 Compilation Strategy
 
 **Step → WASM Instruction Mapping:**
 
@@ -1122,15 +1321,18 @@ Optimized IR from Phase 6
 | `return` | `return` |
 | `if` | `if ... else ... end` |
 | `match` | `block ... br_table ...` |
-| `query target="app_db"` | `call $db_execute_query` (runtime) |
+| `query target="app_db"` | `call $db_query` (import) |
 
-**Effect Handling:**
-- Effects compile to WASI imports
-- `effect database` → link to WASI database API
-- `effect network` → link to WASI HTTP API
-- `effect filesystem` → link to WASI filesystem API
+**Effect Resolution by Target:**
 
-### 7.3 SQL Code Generation
+| Effect | `--target=wasi` | `--target=browser/node` |
+|--------|-----------------|-------------------------|
+| `effect database` | Import `covenant:database/sql` | Import from `runtime.js` |
+| `effect network` | Import `wasi:http/outgoing-handler` | Import from `runtime.js` |
+| `effect filesystem` | Import `wasi:filesystem/types` | Import from `runtime.js` |
+| `effect std.concurrent` | **Error** (WASI 0.3 required) | Promise-based in `runtime.js` |
+
+### 7.4 SQL Code Generation
 
 Queries compile to SQL strings stored in the WASM data segment, with runtime calls to execute them.
 

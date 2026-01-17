@@ -62,6 +62,7 @@ end
 
 ## Snippet Kinds
 
+**Core kinds (no import needed):**
 - `fn` — Function
 - `struct` — Struct type
 - `enum` — Enum type
@@ -70,6 +71,7 @@ end
 - `extern` — External tool binding
 - `test` — Test suite
 - `data` — Data/documentation node
+- `effect-kind` — Define new step kinds (advanced)
 
 ## Type System
 
@@ -104,6 +106,7 @@ end
 - `stdio` — Console I/O
 - `random` — Non-deterministic RNG
 - `time` — Clock access
+- `std.concurrent` — Parallel I/O (imports `parallel`, `race` step kinds)
 
 **Declaration:**
 ```
@@ -340,6 +343,47 @@ step id="s19" kind="transaction"
   as="tx_result"
 end
 ```
+
+### Structured Concurrency (Extended Kinds)
+
+To use parallel/race, first declare `effect std.concurrent`:
+
+```
+effects
+  effect std.concurrent
+  effect network
+end
+```
+
+**Parallel — execute branches concurrently, wait for all:**
+```
+step id="s1" kind="std.concurrent.parallel"
+  branch id="b1"
+    step id="b1.1" kind="call" fn="http.get" arg name="url" lit="https://api/users" as="users" end
+  end
+  branch id="b2"
+    step id="b2.1" kind="call" fn="http.get" arg name="url" lit="https://api/products" as="products" end
+  end
+  as="results"
+end
+```
+
+**Race — execute branches, return first to complete:**
+```
+step id="s2" kind="std.concurrent.race"
+  branch id="b1"
+    step id="b1.1" kind="call" fn="cache.get" arg name="key" from="id" as="cached" end
+  end
+  branch id="b2"
+    step id="b2.1" kind="call" fn="db.query" arg name="id" from="id" as="fresh" end
+  end
+  as="first_result"
+end
+```
+
+**Options:**
+- `on_error="fail_fast"` (default), `"collect_all"`, `"ignore_errors"`
+- `timeout=5s`, `on_timeout="cancel"` or `"return_partial"`
 
 ## Database Bindings
 
@@ -598,11 +642,15 @@ Before returning generated code, verify:
 - [ ] Return types match function signature
 - [ ] SQL dialect queries have `returns` annotation
 - [ ] CRUD operations (insert/update/delete) only target Covenant types
+- [ ] Extended step kinds (e.g., `std.concurrent.parallel`) have required effect declared
 
 ## Grammar Quick Reference
 
-**Keywords (~50 total):**
-snippet, end, effects, requires, types, tools, signature, body, tests, metadata, fn, struct, enum, module, database, extern, test, data, effect, req, priority, text, step, kind, as, op, input, var, lit, from, of, into, set, param, returns, union, collection, type, optional, add, sub, mul, div, mod, equals, not_equals, less, greater, and, or, not, if, then, else, match, case, for, in, return, bind, mut, query, target, select, all, from, join, where, order, by, limit, insert, update, delete, transaction, handle, variant, field, wildcard, binding, literal, true, false, none
+**Keywords (~60 total):**
+snippet, end, effects, requires, types, tools, signature, body, tests, metadata, fn, struct, enum, module, database, extern, test, data, effect-kind, effect, req, priority, text, step, kind, as, op, input, var, lit, from, of, into, set, param, returns, union, collection, type, optional, add, sub, mul, div, mod, equals, not_equals, less, greater, and, or, not, if, then, else, match, case, for, in, return, bind, mut, query, target, select, all, from, join, where, order, by, limit, insert, update, delete, transaction, handle, variant, field, wildcard, binding, literal, true, false, none, branch, on_error, on_timeout, timeout, construct
+
+**Extended step kinds (require `effect std.concurrent`):**
+`std.concurrent.parallel`, `std.concurrent.race`
 
 **No operators. No semicolons. No expression nesting.**
 

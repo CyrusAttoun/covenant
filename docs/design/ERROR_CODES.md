@@ -19,6 +19,12 @@ Comprehensive catalog of all compiler error codes with examples and auto-fix str
   - [E-QUERY-020: Unmatched Placeholder](#e-query-020-unmatched-placeholder)
   - [E-QUERY-021: Missing Placeholder](#e-query-021-missing-placeholder)
   - [E-QUERY-022: Missing Returns Annotation](#e-query-022-missing-returns-annotation)
+- [Kind Errors (E-KIND-xxx)](#kind-errors)
+  - [E-KIND-001: Unknown Kind](#e-kind-001-unknown-kind)
+  - [E-KIND-002: Missing Effect Import](#e-kind-002-missing-effect-import)
+  - [E-KIND-003: Invalid Kind Structure](#e-kind-003-invalid-kind-structure)
+  - [E-KIND-004: Missing Required Section](#e-kind-004-missing-required-section)
+  - [E-KIND-005: Invalid Field Value](#e-kind-005-invalid-field-value)
 - [Warnings (W-xxx)](#warnings)
 
 ---
@@ -1012,6 +1018,279 @@ end
     }
   ]
 }
+
+---
+
+## Kind Errors (E-KIND-xxx)
+
+Errors related to extensible kinds imported via the effects system.
+
+### E-KIND-001: Unknown Kind
+
+**Description:** Step uses a kind that is neither a core kind nor an imported extended kind.
+
+**Example:**
+```
+snippet id="app.fetch" kind="fn"
+
+effects
+  effect network
+end
+
+body
+  step id="s1" kind="std.concurrent.parallel"  // Error: std.concurrent not imported
+    branch id="b1"
+      step id="b1.1" kind="call"
+        fn="http.get"
+        arg name="url" lit="https://api.example.com"
+        as="response"
+      end
+    end
+    as="result"
+  end
+end
+
+end
+```
+
+**Error Output:**
+```
+Error E-KIND-001: Unknown kind 'std.concurrent.parallel'
+  --> app.cov:9:3
+   |
+ 9 |   step id="s1" kind="std.concurrent.parallel"
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = hint: Add 'effect std.concurrent' to snippet effects section
+```
+
+**Auto-fix:**
+```json
+{
+  "kind": "canonical",
+  "confidence": 1.0,
+  "description": "Add missing effect import for kind",
+  "edits": [{
+    "operation": "insert_after",
+    "target": "snippet[@id='app.fetch']/effects/effect[last()]",
+    "content": "\n  effect std.concurrent"
+  }]
+}
+```
+
+---
+
+### E-KIND-002: Missing Effect Import
+
+**Description:** Snippet uses an extended kind but doesn't declare the required effect.
+
+**Example:**
+```
+snippet id="dashboard.load" kind="fn"
+
+// No effects section at all
+
+body
+  step id="s1" kind="std.concurrent.parallel"
+    branch id="b1" ... end
+    as="result"
+  end
+end
+
+end
+```
+
+**Error Output:**
+```
+Error E-KIND-002: Kind 'std.concurrent.parallel' requires effect 'std.concurrent'
+  --> dashboard.cov:6:3
+   |
+ 6 |   step id="s1" kind="std.concurrent.parallel"
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: Extended kinds must be imported via effects
+   = hint: Add effects section with 'effect std.concurrent'
+```
+
+**Auto-fix:**
+```json
+{
+  "kind": "canonical",
+  "confidence": 1.0,
+  "description": "Add effects section with required effect",
+  "edits": [{
+    "operation": "insert_after",
+    "target": "snippet[@id='dashboard.load'][snippet_header]",
+    "content": "\neffects\n  effect std.concurrent\nend"
+  }]
+}
+```
+
+---
+
+### E-KIND-003: Invalid Kind Structure
+
+**Description:** Extended step body doesn't match the structure defined in the kind definition.
+
+**Example:**
+```
+snippet id="app.fetch" kind="fn"
+
+effects
+  effect std.concurrent
+end
+
+body
+  step id="s1" kind="std.concurrent.parallel"
+    // Missing required 'branch' sections
+    as="result"
+  end
+end
+
+end
+```
+
+**Error Output:**
+```
+Error E-KIND-003: Kind 'std.concurrent.parallel' requires at least one 'branch' section
+  --> app.cov:8:3
+   |
+ 8 |   step id="s1" kind="std.concurrent.parallel"
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: Kind definition requires: section 'branch' (multiple=true, required=true)
+   = hint: Add branch blocks containing steps
+```
+
+**Auto-fix:**
+```json
+{
+  "kind": "interactive",
+  "confidence": 0.5,
+  "description": "Add branch section to parallel block",
+  "edits": [{
+    "operation": "insert_before",
+    "target": "snippet[@id='app.fetch']/body/step[@id='s1']/as",
+    "content": "    branch id=\"b1\"\n      // TODO: Add steps\n    end\n"
+  }]
+}
+```
+
+---
+
+### E-KIND-004: Missing Required Section
+
+**Description:** Kind definition is missing a required section in its structure.
+
+**Example:**
+```
+snippet id="myorg.custom" kind="effect-kind"
+
+kinds
+  kind name="my_step"
+    structure
+      // Missing required field or section definitions
+    end
+    // Missing compile_to
+  end
+end
+
+end
+```
+
+**Error Output:**
+```
+Error E-KIND-004: Kind definition 'my_step' missing required field 'compile_to'
+  --> myorg.cov:4:3
+   |
+ 4 |   kind name="my_step"
+   |   ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: Kind definitions must specify 'compile_to' for code generation
+   = hint: Add compile_to="your_runtime_handler"
+```
+
+**Auto-fix:**
+```json
+{
+  "kind": "interactive",
+  "confidence": 0.3,
+  "description": "Add compile_to field to kind definition",
+  "suggestions": [
+    {"label": "compile_to=\"host_custom\"", "confidence": 0.5},
+    {"label": "compile_to=\"wasm_custom\"", "confidence": 0.3}
+  ]
+}
+```
+
+---
+
+### E-KIND-005: Invalid Field Value
+
+**Description:** Field value doesn't match the expected type or allowed values in the kind definition.
+
+**Example:**
+```
+snippet id="app.fetch" kind="fn"
+
+effects
+  effect std.concurrent
+end
+
+body
+  step id="s1" kind="std.concurrent.parallel"
+    on_error="abort"  // Invalid: allowed values are fail_fast, collect_all, ignore_errors
+
+    branch id="b1"
+      step id="b1.1" kind="call"
+        fn="http.get"
+        arg name="url" lit="https://api.example.com"
+        as="response"
+      end
+    end
+    as="result"
+  end
+end
+
+end
+```
+
+**Error Output:**
+```
+Error E-KIND-005: Invalid value 'abort' for field 'on_error'
+  --> app.cov:9:5
+   |
+ 9 |     on_error="abort"
+   |              ^^^^^^^
+   |
+   = note: Allowed values: fail_fast, collect_all, ignore_errors
+   = hint: Did you mean 'fail_fast'?
+```
+
+**Auto-fix:**
+```json
+{
+  "kind": "ranked",
+  "confidence": 0.9,
+  "description": "Fix invalid field value",
+  "edits": [
+    {
+      "description": "Change to 'fail_fast' (most similar)",
+      "confidence": 0.9,
+      "operation": "replace",
+      "target": "snippet[@id='app.fetch']/body/step[@id='s1']/@on_error",
+      "content": "\"fail_fast\""
+    },
+    {
+      "description": "Change to 'collect_all'",
+      "confidence": 0.5,
+      "operation": "replace",
+      "target": "snippet[@id='app.fetch']/body/step[@id='s1']/@on_error",
+      "content": "\"collect_all\""
+    }
+  ]
+}
+```
 
 ---
 
