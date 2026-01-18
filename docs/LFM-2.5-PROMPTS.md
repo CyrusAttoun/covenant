@@ -13,6 +13,7 @@ Based on testing, these techniques improve accuracy:
 3. **One snippet per prompt** - Reduce context accumulation errors
 4. **Explicit return step rule** - Functions must end with explicit return
 5. **`as="..."` syntax reminder** - Always use equals sign, not space
+6. **Forced terminator** - Require `// END` comment after final `end` to prevent truncation
 
 ---
 
@@ -61,7 +62,7 @@ type_ref       = IDENT [ "?" | "[]" ] ;
 literal        = NUMBER | STRING | "true" | "false" | "none" ;
 STRING         = '"' { any_char } '"' ;
 
-=== KEY RULES ===
+=== CRITICAL RULES ===
 
 1. Every snippet starts with `snippet id="..." kind="..."` and ends with `end`
 2. Sections must appear in canonical order: effects, requires, signature, body, tests, metadata
@@ -71,6 +72,7 @@ STRING         = '"' { any_char } '"' ;
 6. Effects must be declared before using effectful functions
 7. No operators - use keywords (add, equals, and, or, not)
 8. Double quotes only for strings
+9. MUST end snippet with `// END` comment on the line after the final `end`
 
 === TASK ===
 
@@ -80,6 +82,7 @@ Generate a Covenant function that:
 - Has a signature with function name "main", no parameters, returns type "Unit"
 - Body calls "console.println" with argument name="message" and literal value "Hello, world!"
 - Discards the return value with as="_"
+- End with `// END` comment after the final `end`
 
 Generate only the Covenant code, no explanations.
 ```
@@ -107,6 +110,7 @@ body
 end
 
 end
+// END
 ```
 
 ---
@@ -162,47 +166,74 @@ return_body    = "from" "=" STRING ;
 type_ref       = IDENT [ "?" | "[]" ] ;
 literal        = NUMBER | STRING | "true" | "false" | "none" | "[" [ literal { "," literal } ] "]" ;
 
-=== KEY RULES ===
+=== CRITICAL RULES ===
 
-1. Every snippet: `snippet id="..." kind="..."` ... `end`
+1. EVERY BLOCK NEEDS MATCHING `end`: snippet...end, effects...end, signature...end, fn...end, body...end, step...end, where...end, and...end
 2. Sections in order: effects, requires, signature, body, tests, metadata
-3. Every step has: id, kind, body, `as="..."` binding
-4. The "meta" effect allows querying the project's symbol graph
-5. target="project" queries the current project's AST
-6. from="functions" queries function symbols, from="requirements" queries requirements, etc.
+3. EVERY step has: id, kind, body content, and `as="..."` (with equals sign, not space)
+4. EVERY function body MUST end with an explicit return step
+5. The "meta" effect allows querying the project's symbol graph
+6. target="project" queries the current project's AST
 7. Compound conditions use `and ... end` or `or ... end` with nested conditions
-8. Array literals use brackets: lit=[] for empty, lit=["a", "b"] for values
-9. Use "contains" for checking if a field contains a value
-10. Use "matches" for regex pattern matching on string fields
+8. Array literals use brackets: lit=[] for empty
+9. MUST end EVERY snippet with `// END` comment on the line after the final `end`
+
+=== TEMPLATE (follow this structure exactly) ===
+
+snippet id="..." kind="fn"
+
+effects
+  effect ...
+end
+
+signature
+  fn name="..."
+    ...
+  end
+end
+
+body
+  step id="s1" kind="query"
+    ...
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+// END
 
 === TASK ===
 
-Generate THREE Covenant functions for querying the project's symbol graph:
+Generate THREE Covenant functions. Each function MUST have a query step followed by a return step. Each snippet MUST end with `// END` comment.
 
 FUNCTION 1: meta.find_db_functions
 - Effect: meta
-- Returns: FunctionInfo[]
+- Returns: collection of="FunctionInfo"
 - Query target="project", select all from="functions"
 - Where: contains field="effects" lit="database"
-- Return the result
+- Step s1: query, Step s2: return from="result"
 
 FUNCTION 2: meta.find_callers
 - Effect: meta
 - Parameter: fn_name of type String
-- Returns: FunctionInfo[]
+- Returns: collection of="FunctionInfo"
 - Query target="project", select field="called_by" from="functions"
 - Where: equals field="name" var="fn_name"
-- Return the result
+- Step s1: query, Step s2: return from="result"
 
 FUNCTION 3: meta.find_dead_code
 - Effect: meta
-- Returns: FunctionInfo[]
+- Returns: collection of="FunctionInfo"
 - Query target="project", select all from="functions"
-- Where: compound AND condition with THREE clauses:
+- Where: compound AND with THREE conditions inside:
   - equals field="called_by" lit=[]
   - equals field="is_exported" lit=false
   - equals field="is_entry_point" lit=false
-- Return the result
+- Step s1: query, Step s2: return from="result"
 
 Generate only the Covenant code for all three functions, no explanations.
 ```
@@ -238,6 +269,7 @@ body
 end
 
 end
+// END
 
 
 snippet id="meta.find_callers" kind="fn"
@@ -270,6 +302,7 @@ body
 end
 
 end
+// END
 
 
 snippet id="meta.find_dead_code" kind="fn"
@@ -305,6 +338,7 @@ body
 end
 
 end
+// END
 ```
 
 ---
@@ -313,131 +347,222 @@ end
 
 **Target**: Complex SQL queries with CTEs, window functions, and dialect-specific syntax
 
+**Note**: This prompt is split into two separate prompts (3a and 3b) to reduce complexity and improve accuracy.
+
+### Prompt 3a: PostgreSQL with CTE
+
 ```
 You are a code generator for Covenant, a machine-first programming language. Generate valid Covenant code following the grammar and rules below.
 
 === COVENANT GRAMMAR (EBNF) ===
 
-(* Top Level *)
-program        = { snippet } ;
 snippet        = "snippet" "id" "=" STRING "kind" "=" snippet_kind { section } "end" ;
-snippet_kind   = "fn" | "struct" | "enum" | "module" | "database" | "extern" | "test" | "data" ;
+section        = effects_section | requires_section | signature_section | body_section | tests_section ;
 
-(* Sections - canonical order *)
-section        = effects_section | requires_section | signature_section | body_section | tests_section | metadata_section ;
-
-(* Effects Section *)
-effects_section = "effects" { effect_decl } "end" ;
-effect_decl     = "effect" IDENT ;
-
-(* Requirements Section *)
+effects_section = "effects" { "effect" IDENT } "end" ;
 requires_section = "requires" { requirement } "end" ;
-requirement      = "req" "id" "=" STRING { req_field } "end" ;
-req_field        = "text" STRING | "priority" ( "critical" | "high" | "medium" | "low" ) ;
-
-(* Signature Section *)
+requirement    = "req" "id" "=" STRING "text" STRING "priority" ( "critical" | "high" | "medium" | "low" ) "end" ;
 signature_section = "signature" fn_signature "end" ;
-fn_signature   = "fn" "name" "=" STRING { param_decl } [ returns_decl ] "end" ;
+fn_signature   = "fn" "name" "=" STRING { param_decl } returns_decl "end" ;
 param_decl     = "param" "name" "=" STRING "type" "=" type_ref ;
-returns_decl   = "returns" ( "type" "=" type_ref | "collection" "of" "=" type_ref | "union" { union_member } "end" ) ;
+returns_decl   = "returns" "collection" "of" "=" type_ref ;
 
-(* Body Section *)
 body_section   = "body" { step } "end" ;
 step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
-step_kind      = "compute" | "call" | "query" | "bind" | "return" ;
 
-(* Query Step with SQL Dialect *)
-query_body     = [ dialect_clause ] "target" "=" STRING query_content ;
-dialect_clause = "dialect" "=" STRING ;
-
-(* SQL Dialect Query - raw SQL in body block *)
-dialect_query_content = "body" RAW_SQL "end" [ params_section ] "returns" return_type_spec ;
-params_section = "params" { param_binding } "end" ;
+(* SQL Query Step *)
+sql_query_step = "dialect" "=" STRING "target" "=" STRING "body" RAW_SQL "end" "params" { param_binding } "end" "returns" "collection" "of" "=" type_ref ;
 param_binding  = "param" "name" "=" STRING "from" "=" STRING ;
-return_type_spec = "type" "=" type_ref | "collection" "of" "=" type_ref ;
 
-(* Return Step *)
-return_body    = "from" "=" STRING ;
+return_step    = "from" "=" STRING ;
 
-(* Tests Section *)
 tests_section  = "tests" { test_def } "end" ;
-test_def       = "test" "id" "=" STRING "kind" "=" test_kind [ "covers" "=" STRING ] "end" ;
-test_kind      = "unit" | "property" | "integration" ;
+test_def       = "test" "id" "=" STRING "kind" "=" "unit" "covers" "=" STRING "end" ;
 
-(* Types *)
-type_ref       = IDENT [ "?" | "[]" ] ;
+=== CRITICAL RULES ===
 
-=== KEY RULES ===
+1. EVERY BLOCK NEEDS `end`: snippet...end, effects...end, requires...end, req...end, signature...end, fn...end, body...end, step...end, params...end, tests...end, test...end
+2. ALWAYS use `as="..."` with EQUALS SIGN (not `as "..."` with space)
+3. Function body MUST have TWO steps: (1) query step with as="result", (2) return step with as="_"
+4. SQL goes between `body` and `end` INSIDE the query step - do NOT add extra syntax
+5. PostgreSQL parameters use :name syntax in SQL
+6. MUST end snippet with `// END` comment on the line after the final `end`
 
-1. Every snippet: `snippet id="..." kind="..."` ... `end`
-2. Sections in canonical order: effects, requires, signature, body, tests, metadata
-3. Every step has: id, kind, body, `as="..."` binding
-4. SQL dialect queries use `dialect="postgres"` or `dialect="sqlserver"`
-5. Raw SQL goes between `body` and `end` - the compiler does NOT parse this SQL
-6. PostgreSQL uses :param_name for parameters
-7. SQL Server uses @param_name for parameters
-8. params section maps Covenant variables to SQL placeholders
-9. returns clause is REQUIRED for dialect queries to specify the result type
-10. The "database" effect is required for all database operations
+=== TEMPLATE (copy this structure exactly) ===
+
+snippet id="..." kind="fn"
+
+effects
+  effect database
+end
+
+requires
+  req id="..."
+    text "..."
+    priority high
+  end
+end
+
+signature
+  fn name="..."
+    param name="..." type="..."
+    returns collection of="..."
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="postgres"
+    target="..."
+    body
+      SELECT ... FROM ... WHERE ... :param_name ...
+    end
+    params
+      param name="..." from="..."
+    end
+    returns collection of="..."
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+tests
+  test id="..." kind="unit" covers="..."
+  end
+end
+
+end
+// END
 
 === TASK ===
 
-Generate TWO Covenant functions with advanced SQL:
+Generate ONE Covenant function: analytics.high_value_customers
 
-FUNCTION 1: analytics.high_value_customers (PostgreSQL)
+- Snippet id: "analytics.high_value_customers"
+- Kind: "fn"
 - Effect: database
 - Requirement: id="R-ANALYTICS-001", text="Identify customers with total spending above threshold", priority=high
+- Function name: "get_high_value_customers"
 - Parameters: min_revenue (Decimal), min_orders (Int)
-- Returns: collection of CustomerStats
-- Target: app_db
-- SQL body with CTE:
-  ```sql
-  WITH customer_orders AS (
-    SELECT
-      customer_id,
-      COUNT(*) as order_count,
-      SUM(total) as total_revenue,
-      AVG(total) as avg_order_value,
-      ARRAY_AGG(DISTINCT product_id) as products
-    FROM orders
-    GROUP BY customer_id
-  )
-  SELECT
-    c.id, c.email, c.name,
-    co.order_count, co.total_revenue, co.avg_order_value, co.products
-  FROM customer_orders co
-  JOIN customers c ON c.id = co.customer_id
-  WHERE co.total_revenue > :min_revenue AND co.order_count >= :min_orders
-  ORDER BY co.total_revenue DESC
-  ```
-- Params: map min_revenue and min_orders
-- Include a test covering the requirement
+- Returns: collection of="CustomerStats"
+- Dialect: "postgres"
+- Target: "app_db"
+- SQL (copy exactly):
+WITH customer_orders AS (
+  SELECT customer_id, COUNT(*) as order_count, SUM(total) as total_revenue
+  FROM orders GROUP BY customer_id
+)
+SELECT c.id, c.name, co.order_count, co.total_revenue
+FROM customer_orders co JOIN customers c ON c.id = co.customer_id
+WHERE co.total_revenue > :min_revenue AND co.order_count >= :min_orders
+ORDER BY co.total_revenue DESC
+- Params: min_revenue from="min_revenue", min_orders from="min_orders"
+- Test: id="T-ANALYTICS-001", kind="unit", covers="R-ANALYTICS-001"
+- Steps: s1 (query), s2 (return)
+- End with `// END` comment after the final `end`
 
-FUNCTION 2: analytics.sales_with_metrics (SQL Server)
-- Effect: database
-- Parameter: user_id (Int)
-- Returns: collection of SalesMetrics
-- Target: analytics_db
-- SQL body with window functions:
-  ```sql
-  SELECT
-    order_id, order_date, amount,
-    ROW_NUMBER() OVER (ORDER BY order_date) as order_sequence,
-    RANK() OVER (ORDER BY amount DESC) as amount_rank,
-    SUM(amount) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as running_total,
-    AVG(amount) OVER (ORDER BY order_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) as moving_avg_3,
-    LAG(amount, 1) OVER (ORDER BY order_date) as prev_amount,
-    LEAD(amount, 1) OVER (ORDER BY order_date) as next_amount
-  FROM orders
-  WHERE user_id = @user_id
-  ORDER BY order_date
-  ```
-- Params: map user_id
-
-Generate only the Covenant code for both functions, no explanations.
+Generate only the Covenant code, no explanations.
 ```
 
-**Expected Output**:
+### Prompt 3b: SQL Server with Window Functions
+
+```
+You are a code generator for Covenant, a machine-first programming language. Generate valid Covenant code following the grammar and rules below.
+
+=== COVENANT GRAMMAR (EBNF) ===
+
+snippet        = "snippet" "id" "=" STRING "kind" "=" snippet_kind { section } "end" ;
+section        = effects_section | signature_section | body_section ;
+
+effects_section = "effects" { "effect" IDENT } "end" ;
+signature_section = "signature" fn_signature "end" ;
+fn_signature   = "fn" "name" "=" STRING { param_decl } returns_decl "end" ;
+param_decl     = "param" "name" "=" STRING "type" "=" type_ref ;
+returns_decl   = "returns" "collection" "of" "=" type_ref ;
+
+body_section   = "body" { step } "end" ;
+step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
+
+(* SQL Query Step *)
+sql_query_step = "dialect" "=" STRING "target" "=" STRING "body" RAW_SQL "end" "params" { param_binding } "end" "returns" "collection" "of" "=" type_ref ;
+param_binding  = "param" "name" "=" STRING "from" "=" STRING ;
+
+return_step    = "from" "=" STRING ;
+
+=== CRITICAL RULES ===
+
+1. EVERY BLOCK NEEDS `end`: snippet...end, effects...end, signature...end, fn...end, body...end, step...end, params...end
+2. ALWAYS use `as="..."` with EQUALS SIGN (not `as "..."` with space)
+3. Function body MUST have TWO steps: (1) query step with as="result", (2) return step with as="_"
+4. SQL goes between `body` and `end` INSIDE the query step
+5. SQL Server parameters use @name syntax in SQL
+6. MUST end snippet with `// END` comment on the line after the final `end`
+
+=== TEMPLATE (copy this structure exactly) ===
+
+snippet id="..." kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="..."
+    param name="..." type="..."
+    returns collection of="..."
+  end
+end
+
+body
+  step id="s1" kind="query"
+    dialect="sqlserver"
+    target="..."
+    body
+      SELECT ... FROM ... WHERE ... @param_name ...
+    end
+    params
+      param name="..." from="..."
+    end
+    returns collection of="..."
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+// END
+
+=== TASK ===
+
+Generate ONE Covenant function: analytics.sales_with_metrics
+
+- Snippet id: "analytics.sales_with_metrics"
+- Kind: "fn"
+- Effect: database
+- Function name: "calculate_sales_metrics"
+- Parameter: user_id (Int)
+- Returns: collection of="SalesMetrics"
+- Dialect: "sqlserver"
+- Target: "analytics_db"
+- SQL (copy exactly):
+SELECT order_id, order_date, amount,
+  ROW_NUMBER() OVER (ORDER BY order_date) as order_sequence,
+  SUM(amount) OVER (ORDER BY order_date ROWS UNBOUNDED PRECEDING) as running_total
+FROM orders WHERE user_id = @user_id ORDER BY order_date
+- Params: user_id from="user_id"
+- Steps: s1 (query), s2 (return)
+- End with `// END` comment after the final `end`
+
+Generate only the Covenant code, no explanations.
+```
+
+**Expected Output for Prompt 3a**:
 ```covenant
 snippet id="analytics.high_value_customers" kind="fn"
 
@@ -466,27 +591,12 @@ body
     target="app_db"
     body
       WITH customer_orders AS (
-        SELECT
-          customer_id,
-          COUNT(*) as order_count,
-          SUM(total) as total_revenue,
-          AVG(total) as avg_order_value,
-          ARRAY_AGG(DISTINCT product_id) as products
-        FROM orders
-        GROUP BY customer_id
+        SELECT customer_id, COUNT(*) as order_count, SUM(total) as total_revenue
+        FROM orders GROUP BY customer_id
       )
-      SELECT
-        c.id,
-        c.email,
-        c.name,
-        co.order_count,
-        co.total_revenue,
-        co.avg_order_value,
-        co.products
-      FROM customer_orders co
-      JOIN customers c ON c.id = co.customer_id
-      WHERE co.total_revenue > :min_revenue
-        AND co.order_count >= :min_orders
+      SELECT c.id, c.name, co.order_count, co.total_revenue
+      FROM customer_orders co JOIN customers c ON c.id = co.customer_id
+      WHERE co.total_revenue > :min_revenue AND co.order_count >= :min_orders
       ORDER BY co.total_revenue DESC
     end
     params
@@ -496,7 +606,6 @@ body
     returns collection of="CustomerStats"
     as="result"
   end
-
   step id="s2" kind="return"
     from="result"
     as="_"
@@ -509,8 +618,11 @@ tests
 end
 
 end
+// END
+```
 
-
+**Expected Output for Prompt 3b**:
+```covenant
 snippet id="analytics.sales_with_metrics" kind="fn"
 
 effects
@@ -529,25 +641,10 @@ body
     dialect="sqlserver"
     target="analytics_db"
     body
-      SELECT
-        order_id,
-        order_date,
-        amount,
+      SELECT order_id, order_date, amount,
         ROW_NUMBER() OVER (ORDER BY order_date) as order_sequence,
-        RANK() OVER (ORDER BY amount DESC) as amount_rank,
-        SUM(amount) OVER (
-          ORDER BY order_date
-          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ) as running_total,
-        AVG(amount) OVER (
-          ORDER BY order_date
-          ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
-        ) as moving_avg_3,
-        LAG(amount, 1) OVER (ORDER BY order_date) as prev_amount,
-        LEAD(amount, 1) OVER (ORDER BY order_date) as next_amount
-      FROM orders
-      WHERE user_id = @user_id
-      ORDER BY order_date
+        SUM(amount) OVER (ORDER BY order_date ROWS UNBOUNDED PRECEDING) as running_total
+      FROM orders WHERE user_id = @user_id ORDER BY order_date
     end
     params
       param name="user_id" from="user_id"
@@ -555,7 +652,6 @@ body
     returns collection of="SalesMetrics"
     as="result"
   end
-
   step id="s2" kind="return"
     from="result"
     as="_"
@@ -563,6 +659,7 @@ body
 end
 
 end
+// END
 ```
 
 ---
@@ -571,110 +668,250 @@ end
 
 **Target**: Enum definition and functions using match expressions with variant patterns and bindings
 
+**Note**: Split into three separate prompts (4a, 4b, 4c) to improve accuracy.
+
+### Prompt 4a: Enum Definition
+
 ```
 You are a code generator for Covenant, a machine-first programming language. Generate valid Covenant code following the grammar and rules below.
 
 === COVENANT GRAMMAR (EBNF) ===
 
-(* Top Level *)
-program        = { snippet } ;
 snippet        = "snippet" "id" "=" STRING "kind" "=" snippet_kind { section } "end" ;
-snippet_kind   = "fn" | "struct" | "enum" | "module" | "database" | "extern" | "test" | "data" ;
+snippet_kind   = "fn" | "struct" | "enum" ;
+section        = signature_section ;
 
-(* Sections - canonical order *)
-section        = effects_section | requires_section | signature_section | body_section | tests_section | metadata_section ;
-
-(* Signature Section - for enums *)
-signature_section = "signature" ( fn_signature | enum_signature ) "end" ;
-
+signature_section = "signature" enum_signature "end" ;
 enum_signature = "enum" "name" "=" STRING { enum_variant } "end" ;
-enum_variant   = "variant" "name" "=" STRING [ variant_fields ] "end" ;
-variant_fields = { "field" "name" "=" STRING "type" "=" type_ref } ;
+enum_variant   = "variant" "name" "=" STRING [ { field_decl } ] "end" ;
+field_decl     = "field" "name" "=" STRING "type" "=" type_ref ;
 
-(* Signature Section - for functions *)
-fn_signature   = "fn" "name" "=" STRING { param_decl } [ returns_decl ] "end" ;
-param_decl     = "param" "name" "=" STRING "type" "=" type_ref ;
-returns_decl   = "returns" "type" "=" type_ref [ "optional" ] ;
+type_ref       = IDENT [ "[]" | "<" type_ref "," type_ref ">" ] ;
 
-(* Body Section *)
-body_section   = "body" { step } "end" ;
-step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
-step_kind      = "compute" | "call" | "query" | "bind" | "return" | "if" | "match" | "for" ;
+=== CRITICAL RULES ===
 
-(* Match Step - pattern matching on values *)
-match_body     = "on" "=" STRING { match_case } ;
-match_case     = "case" pattern { step } "end" ;
-pattern        = variant_pattern | wildcard_pattern ;
-variant_pattern = "variant" "type" "=" STRING [ "bindings" "=" "(" { STRING } ")" ] ;
-wildcard_pattern = "wildcard" ;
+1. EVERY BLOCK NEEDS `end`: snippet...end, signature...end, enum...end, variant...end
+2. Enum snippets use kind="enum"
+3. Each variant MUST have its own `end`
+4. Variants without fields still need `end` immediately after the name
+5. MUST end snippet with `// END` comment on the line after the final `end`
 
-(* Call Step *)
-call_body      = "fn" "=" STRING { call_arg } ;
-call_arg       = "arg" "name" "=" STRING "from" "=" STRING ;
+=== TEMPLATE ===
 
-(* Return Step *)
-return_body    = "from" "=" STRING | "lit" "=" literal ;
+snippet id="..." kind="enum"
 
-(* Types and Literals *)
-type_ref       = IDENT [ "::" IDENT ] [ "?" | "[]" | "<" type_list ">" ] ;
-type_list      = type_ref { "," type_ref } ;
-literal        = NUMBER | STRING | "true" | "false" | "none" ;
+signature
+  enum name="..."
+    variant name="NoFields"
+    end
+    variant name="WithField"
+      field name="..." type="..."
+    end
+  end
+end
 
-=== KEY RULES ===
-
-1. Every snippet: `snippet id="..." kind="..."` ... `end`
-2. Sections in canonical order: effects, requires, signature, body, tests, metadata
-3. Every step has: id, kind, body content, and `as="..."` for output binding
-4. Enum snippets use kind="enum" and have signature with enum definition
-5. Variant patterns use `variant type="EnumName::VariantName"`
-6. To extract data from a variant, use `bindings=("var1", "var2")` - variables are bound in order
-7. Use `wildcard` for catch-all/default cases
-8. Match steps contain nested steps inside each case
-9. Steps inside match cases use sub-IDs like "s1a", "s1b", etc.
-10. The match step itself needs `as="_"` at the end (after all cases)
-11. Return `lit=none` for returning the none/null value
-12. Optional return types use `returns type="T" optional`
+end
+// END
 
 === TASK ===
 
-Generate THREE Covenant snippets for JSON handling with pattern matching:
+Generate ONE enum snippet: json.Json
 
-SNIPPET 1: json.Json (enum definition)
-- kind="enum"
-- Define enum "Json" with 6 variants:
-  - Null (no fields)
-  - Bool (field: value of type Bool)
-  - Number (field: value of type Float)
-  - String (field: value of type String)
-  - Array (field: items of type Json[])
-  - Object (field: fields of type Map<String, Json>)
+- Snippet id: "json.Json"
+- Kind: "enum"
+- Enum name: "Json"
+- 6 variants (each needs its own `end`):
+  1. variant name="Null" end (no fields)
+  2. variant name="Bool" field name="value" type="Bool" end
+  3. variant name="Number" field name="value" type="Float" end
+  4. variant name="String" field name="value" type="String" end
+  5. variant name="Array" field name="items" type="Json[]" end
+  6. variant name="Object" field name="fields" type="Map<String, Json>" end
+- End with `// END` comment after the final `end`
 
-SNIPPET 2: json.type_name (function)
-- kind="fn"
-- Parameter: value of type Json
-- Returns: String
-- Match on "value" with 6 cases for each Json variant:
-  - Json::Null -> return lit="null"
-  - Json::Bool -> return lit="boolean"
-  - Json::Number -> return lit="number"
-  - Json::String -> return lit="string"
-  - Json::Array -> return lit="array"
-  - Json::Object -> return lit="object"
-- Use step IDs: s1 for match, s1a/s1b/s1c/s1d/s1e/s1f for returns inside cases
-
-SNIPPET 3: json.get_string (function)
-- kind="fn"
-- Parameter: value of type Json
-- Returns: String optional
-- Match on "value" with 2 cases:
-  - Json::String with bindings=("s") -> return from="s"
-  - wildcard -> return lit=none
-- Use step IDs: s1 for match, s1a for first return, s1b for second return
-
-Generate only the Covenant code for all three snippets, no explanations.
+Generate only the Covenant code, no explanations.
 ```
 
-**Expected Output**:
+### Prompt 4b: Match with Multiple Cases
+
+```
+You are a code generator for Covenant, a machine-first programming language. Generate valid Covenant code following the grammar and rules below.
+
+=== COVENANT GRAMMAR (EBNF) ===
+
+snippet        = "snippet" "id" "=" STRING "kind" "=" "fn" { section } "end" ;
+section        = signature_section | body_section ;
+
+signature_section = "signature" fn_signature "end" ;
+fn_signature   = "fn" "name" "=" STRING param_decl returns_decl "end" ;
+param_decl     = "param" "name" "=" STRING "type" "=" type_ref ;
+returns_decl   = "returns" "type" "=" type_ref ;
+
+body_section   = "body" { step } "end" ;
+step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
+
+(* Match Step *)
+match_step     = "on" "=" STRING { match_case } ;
+match_case     = "case" "variant" "type" "=" STRING { step } "end" ;
+
+(* Return Step *)
+return_step    = "lit" "=" literal ;
+literal        = STRING ;
+
+=== CRITICAL RULES ===
+
+1. EVERY BLOCK NEEDS `end`: snippet...end, signature...end, fn...end, body...end, step...end, case...end
+2. ALWAYS use `as="..."` with EQUALS SIGN
+3. Match step structure: on="var" then cases, then as="_" at the very end
+4. Each case has: case variant type="..." then steps inside, then end
+5. Steps inside cases use sub-IDs: s1a, s1b, s1c, s1d, s1e, s1f
+6. Variant types use :: syntax: "EnumName::VariantName"
+7. MUST end snippet with `// END` comment on the line after the final `end`
+
+=== TEMPLATE ===
+
+snippet id="..." kind="fn"
+
+signature
+  fn name="..."
+    param name="..." type="..."
+    returns type="..."
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="..."
+    case variant type="Type::Variant1"
+      step id="s1a" kind="return"
+        lit="..."
+        as="_"
+      end
+    end
+    case variant type="Type::Variant2"
+      step id="s1b" kind="return"
+        lit="..."
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+// END
+
+=== TASK ===
+
+Generate ONE function snippet: json.type_name
+
+- Snippet id: "json.type_name"
+- Kind: "fn"
+- Function name: "json_type_name"
+- Parameter: name="value" type="Json"
+- Returns: type="String"
+- Body: ONE match step (id="s1") with 6 cases:
+  - case variant type="Json::Null" -> step s1a return lit="null"
+  - case variant type="Json::Bool" -> step s1b return lit="boolean"
+  - case variant type="Json::Number" -> step s1c return lit="number"
+  - case variant type="Json::String" -> step s1d return lit="string"
+  - case variant type="Json::Array" -> step s1e return lit="array"
+  - case variant type="Json::Object" -> step s1f return lit="object"
+- Match step ends with as="_"
+- End with `// END` comment after the final `end`
+
+Generate only the Covenant code, no explanations.
+```
+
+### Prompt 4c: Match with Bindings and Wildcard
+
+```
+You are a code generator for Covenant, a machine-first programming language. Generate valid Covenant code following the grammar and rules below.
+
+=== COVENANT GRAMMAR (EBNF) ===
+
+snippet        = "snippet" "id" "=" STRING "kind" "=" "fn" { section } "end" ;
+section        = signature_section | body_section ;
+
+signature_section = "signature" fn_signature "end" ;
+fn_signature   = "fn" "name" "=" STRING param_decl returns_decl "end" ;
+param_decl     = "param" "name" "=" STRING "type" "=" type_ref ;
+returns_decl   = "returns" "type" "=" type_ref "optional" ;
+
+body_section   = "body" { step } "end" ;
+step           = "step" "id" "=" STRING "kind" "=" step_kind step_body "as" "=" STRING "end" ;
+
+(* Match Step *)
+match_step     = "on" "=" STRING { match_case } ;
+match_case     = "case" pattern { step } "end" ;
+pattern        = "variant" "type" "=" STRING [ "bindings" "=" "(" STRING ")" ] | "wildcard" ;
+
+(* Return Step *)
+return_step    = "from" "=" STRING | "lit" "=" "none" ;
+
+=== CRITICAL RULES ===
+
+1. EVERY BLOCK NEEDS `end`: snippet...end, signature...end, fn...end, body...end, step...end, case...end
+2. ALWAYS use `as="..."` with EQUALS SIGN
+3. Match step ends with as="_" AFTER all cases
+4. bindings=("varname") extracts the variant's data into a variable
+5. wildcard is the catch-all default case (no "type" attribute)
+6. Optional returns use: returns type="T" optional
+7. Return none with: lit=none (no quotes around none)
+8. MUST end snippet with `// END` comment on the line after the final `end`
+
+=== TEMPLATE ===
+
+snippet id="..." kind="fn"
+
+signature
+  fn name="..."
+    param name="..." type="..."
+    returns type="..." optional
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="..."
+    case variant type="..." bindings=("extracted_var")
+      step id="s1a" kind="return"
+        from="extracted_var"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+// END
+
+=== TASK ===
+
+Generate ONE function snippet: json.get_string
+
+- Snippet id: "json.get_string"
+- Kind: "fn"
+- Function name: "get_string"
+- Parameter: name="value" type="Json"
+- Returns: type="String" optional
+- Body: ONE match step (id="s1") with 2 cases:
+  - case variant type="Json::String" bindings=("s") -> step s1a return from="s"
+  - case wildcard -> step s1b return lit=none
+- Match step ends with as="_"
+- End with `// END` comment after the final `end`
+
+Generate only the Covenant code, no explanations.
+```
+
+**Expected Output for Prompt 4a**:
 ```covenant
 snippet id="json.Json" kind="enum"
 
@@ -701,8 +938,11 @@ signature
 end
 
 end
+// END
+```
 
-
+**Expected Output for Prompt 4b**:
+```covenant
 snippet id="json.type_name" kind="fn"
 
 signature
@@ -756,8 +996,11 @@ body
 end
 
 end
+// END
+```
 
-
+**Expected Output for Prompt 4c**:
+```covenant
 snippet id="json.get_string" kind="fn"
 
 signature
@@ -787,20 +1030,34 @@ body
 end
 
 end
+// END
 ```
 
 ---
 
 ## Token Estimates
 
-| Prompt | Grammar | Instructions | Task | Total Input | Expected Output |
-|--------|---------|--------------|------|-------------|-----------------|
-| Hello World | ~800 | ~300 | ~150 | ~1,250 | ~150 |
-| Project Queries | ~1,200 | ~400 | ~400 | ~2,000 | ~600 |
-| Advanced SQL | ~1,400 | ~500 | ~800 | ~2,700 | ~1,200 |
-| Pattern Matching | ~1,100 | ~500 | ~500 | ~2,100 | ~800 |
+| Prompt | Grammar | Template | Task | Total Input | Expected Output |
+|--------|---------|----------|------|-------------|-----------------|
+| 1: Hello World | ~800 | ~150 | ~150 | ~1,100 | ~150 |
+| 2: Project Queries | ~800 | ~200 | ~350 | ~1,350 | ~600 |
+| 3a: PostgreSQL CTE | ~500 | ~300 | ~300 | ~1,100 | ~400 |
+| 3b: SQL Server | ~400 | ~250 | ~200 | ~850 | ~300 |
+| 4a: Enum Definition | ~300 | ~150 | ~200 | ~650 | ~250 |
+| 4b: Match Cases | ~400 | ~250 | ~250 | ~900 | ~450 |
+| 4c: Match Bindings | ~400 | ~250 | ~200 | ~850 | ~200 |
 
-All prompts fit comfortably within a 32K context window, leaving ample room for generation.
+All prompts are under 1,500 tokens input, leaving massive headroom in a 32K context window.
+
+## Key Improvements in V2 Prompts
+
+1. **One snippet per prompt** - Eliminates context accumulation errors
+2. **Explicit template** - Shows exact nesting structure to copy
+3. **"CRITICAL RULES" section** - Emphasizes `end` keywords and `as="..."` syntax
+4. **Simplified grammar** - Only includes rules relevant to that specific task
+5. **Shorter SQL** - Reduced SQL complexity to avoid attention drift
+6. **Explicit step counts** - "TWO steps: query then return"
+7. **Forced `// END` terminator** - Comment after final `end` prevents truncation issues
 
 ## Usage Notes
 

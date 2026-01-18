@@ -1499,6 +1499,138 @@ If backend error occurs → **compiler bug**, report as E-INTERNAL-001
 - **Binary size:** Minimal overhead (<10% metadata)
 - **Optimization level:** Configurable (`-O0`, `-O1`, `-O2`, `-O3`)
 
+### 7.5 Symbol Embedding
+
+Compiled WASM binaries can include symbol graph metadata for runtime introspection and `target="project"` queries. The `--embed-symbols` flag controls what gets embedded.
+
+#### Embedding Levels
+
+| Flag | Embeds | Use Case |
+|------|--------|----------|
+| `--embed-symbols=api` | Exported functions, declared effects, public types | **Default for release.** Capability negotiation, minimal overhead |
+| `--embed-symbols=reachable` | Symbols referenced by `target="project"` queries | Smart embedding based on static query analysis |
+| `--embed-symbols=full` | Entire symbol graph | Self-contained distribution, debugging |
+| `--embed-symbols=none` | Nothing | Pure computation, smallest binary |
+
+#### API-Level Embedding (Default)
+
+With `--embed-symbols=api`, the binary includes:
+
+```json
+{
+  "module": {
+    "id": "app",
+    "exports": [
+      {"id": "app.main", "kind": "fn", "signature": "..."},
+      {"id": "app.process", "kind": "fn", "signature": "..."}
+    ],
+    "effects": ["network", "database"],
+    "public_types": [
+      {"id": "app.User", "kind": "struct", "fields": "..."}
+    ]
+  }
+}
+```
+
+This enables:
+- Runtime capability negotiation ("does this module require `effect database`?")
+- Basic introspection without external index
+- Minimal binary size overhead (~1-5KB typical)
+
+#### Reachable-Level Embedding
+
+With `--embed-symbols=reachable`, the compiler:
+
+1. **Analyzes all `target="project"` queries** in the codebase
+2. **Traces which symbol kinds/fields are accessed** (functions, effects, calls, etc.)
+3. **Embeds only matching symbols** with only the accessed fields
+
+**Example:** If the only project query is:
+```
+select field="id" from="functions" where contains field="effects" lit="database"
+```
+
+The compiler embeds:
+- All function symbols (id and effects fields only)
+- No structs, enums, requirements, or tests
+
+This provides self-contained query execution with minimal overhead.
+
+#### Full-Level Embedding
+
+With `--embed-symbols=full`, the entire symbol graph is serialized into the WASM data segment:
+
+```
+┌─────────────────────────────────────────┐
+│ WASM Data Segment                        │
+├─────────────────────────────────────────┤
+│ 0x0000: SQL queries (strings)            │
+│ 0x1000: String literals                  │
+│ 0x2000: Symbol graph (MessagePack)       │ ← Full embedding
+│   - All snippets with full metadata      │
+│   - Forward/backward references          │
+│   - Effect closures                      │
+│   - Requirements and tests               │
+└─────────────────────────────────────────┘
+```
+
+Use cases:
+- Distributed execution (send module to remote runtime)
+- Offline documentation generation
+- Complete self-description
+
+#### Runtime Query Resolution
+
+At runtime, `target="project"` queries resolve against:
+
+1. **Embedded symbols** (if available at required level)
+2. **Host-provided `covenant:project/query` interface** (fallback)
+
+```
+Query Execution Flow:
+
+  target="project" query
+         ↓
+  ┌──────────────────────┐
+  │ Check embedded level │
+  │ vs. query needs      │
+  └──────────────────────┘
+         ↓
+    ┌────┴────┐
+    │ Sufficient? │
+    └────┬────┘
+     Yes │    No
+         ↓         ↓
+  ┌──────────┐  ┌─────────────────┐
+  │ Execute  │  │ Call host import │
+  │ locally  │  │ covenant:project │
+  └──────────┘  └─────────────────┘
+```
+
+**Error case:** If query requires symbols not embedded and no host provides `covenant:project/query`:
+
+```json
+{
+  "code": "E-RUNTIME-001",
+  "message": "Project query requires symbol data not available",
+  "query_from": "functions",
+  "embed_level": "api",
+  "suggestion": "Recompile with --embed-symbols=reachable or provide covenant:project/query host import"
+}
+```
+
+#### Serialization Format
+
+Embedded symbols use MessagePack for compact binary representation:
+
+| Format | Size (10K symbols) | Parse Time |
+|--------|-------------------|------------|
+| JSON | ~2.5 MB | ~50ms |
+| MessagePack | ~800 KB | ~15ms |
+| Custom binary | ~500 KB | ~5ms |
+
+MessagePack is the default (good balance). Custom binary format is a future optimization.
+
 ---
 
 ## Error Handling

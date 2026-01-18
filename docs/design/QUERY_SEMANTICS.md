@@ -11,6 +11,7 @@ Formal operational semantics for Covenant's dialect-based query system.
 3. [Formal Semantics](#formal-semantics)
 4. [Database Queries](#database-queries)
 5. [Project Queries](#project-queries)
+   - [Runtime Symbol Resolution](#runtime-symbol-resolution)
 6. [Cost Model](#cost-model)
 7. [Caching & Memoization](#caching--memoization)
 8. [Null Handling](#null-handling)
@@ -403,6 +404,100 @@ step id="s1" kind="query"
   end
   as="callers"
 end
+```
+
+### Runtime Symbol Resolution
+
+At runtime, `target="project"` queries resolve symbol data from one of two sources:
+
+1. **Embedded symbols** — Serialized in the WASM binary (see [COMPILER.md](COMPILER.md), Section 7.5)
+2. **Host-provided interface** — Via `covenant:project/query` WIT import
+
+#### Resolution Strategy
+
+```
+┌─────────────────────────────────────────────────────┐
+│           target="project" Query                     │
+└─────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────┐
+│  1. Check embedded symbol level                      │
+│     - api: exports, effects, public types only      │
+│     - reachable: symbols needed by project queries  │
+│     - full: complete symbol graph                   │
+│     - none: no embedded symbols                     │
+└─────────────────────────────────────────────────────┘
+                        ↓
+              ┌─────────┴─────────┐
+              │ Query satisfiable │
+              │ with embedded?    │
+              └─────────┬─────────┘
+                 Yes    │    No
+                        ↓         ↓
+          ┌─────────────────┐  ┌─────────────────────┐
+          │ Execute against │  │ Import host symbols │
+          │ embedded graph  │  │ covenant:project    │
+          └─────────────────┘  └─────────────────────┘
+                        ↓                   ↓
+                   ┌────┴───────────────────┘
+                   ↓
+          Return query results
+```
+
+#### Embedding Levels and Query Coverage
+
+| Level | Queryable | Not Queryable |
+|-------|-----------|---------------|
+| `api` | Exported functions, module effects, public types | Internal functions, requirements, tests, call graphs |
+| `reachable` | Whatever the code's queries actually access | Unused symbol kinds/fields |
+| `full` | Everything | — |
+| `none` | — | Everything (requires host) |
+
+#### External Index Usage
+
+During **development**, the compiler maintains an external index at `.covenant/index.db`. This index:
+
+- Is the **source of truth** for IDE tooling (LSP, hover, go-to-definition)
+- Supports **incremental updates** (single-snippet recompilation)
+- Provides **complete symbol data** regardless of embedding level
+
+For **WASI deployments**, if the embedded level is insufficient, the host must provide `covenant:project/query`:
+
+```wit
+// Host provides this interface
+import covenant:project/query;
+```
+
+See [WASI_INTEGRATION.md](WASI_INTEGRATION.md) for the full WIT interface definition.
+
+#### Error Handling
+
+**E-RUNTIME-001: Insufficient Symbol Data**
+
+Occurs when a query requires symbols not available:
+
+```json
+{
+  "code": "E-RUNTIME-001",
+  "message": "Project query requires symbol data not available",
+  "query": "select all from=\"requirements\"",
+  "embed_level": "api",
+  "required": "requirements",
+  "suggestion": "Recompile with --embed-symbols=reachable or --embed-symbols=full"
+}
+```
+
+**Prevention:** The compiler warns at compile-time if `target="project"` queries may fail at runtime given the embedding level:
+
+```
+Warning W-EMBED-001: Query may fail at runtime
+  --> app.cov:42:3
+   |
+42 |   step id="s1" kind="query"
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^
+   |   Query accesses "requirements" but --embed-symbols=api only includes exports
+   |
+   = note: Consider --embed-symbols=reachable or ensure host provides covenant:project/query
 ```
 
 ---

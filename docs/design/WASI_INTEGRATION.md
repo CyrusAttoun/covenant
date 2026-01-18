@@ -340,6 +340,65 @@ interface query {
 
 **Usage:** The host runtime loads the compiled symbol graph and executes queries against it. This enables Covenant's powerful introspection capabilities.
 
+### covenant:project/symbols (Embedded Symbol Access)
+
+For accessing embedded symbol metadata when the module includes embedded symbols (see [COMPILER.md](COMPILER.md), Section 7.5).
+
+```wit
+// covenant:project/symbols
+package covenant:project;
+
+interface symbols {
+    /// Embedding level in the compiled binary
+    enum embed-level {
+        /// No symbols embedded
+        none,
+        /// API surface only: exports, effects, public types
+        api,
+        /// Symbols reachable by project queries
+        reachable,
+        /// Complete symbol graph
+        full,
+    }
+
+    /// Module metadata (always available if any embedding)
+    record module-info {
+        id: string,
+        /// Effects required by this module
+        effects: list<string>,
+        /// Exported function IDs
+        exports: list<string>,
+        /// Public type IDs
+        public-types: list<string>,
+    }
+
+    /// Get the embedding level of this binary
+    get-embed-level: func() -> embed-level;
+
+    /// Get module metadata (available at api level and above)
+    get-module-info: func() -> option<module-info>;
+
+    /// Check if a specific query can be satisfied with embedded symbols
+    /// Returns true if the query can execute without host support
+    can-satisfy-query: func(query-ast: string) -> bool;
+
+    /// Get raw embedded symbol data (MessagePack-encoded)
+    /// Returns none if embed-level is 'none'
+    get-embedded-symbols: func() -> option<list<u8>>;
+}
+```
+
+**Interaction with `covenant:project/query`:**
+
+The runtime uses both interfaces together:
+
+1. Call `symbols.get-embed-level()` to check what's embedded
+2. Call `symbols.can-satisfy-query(query)` to check if a query can run locally
+3. If yes, execute against `symbols.get-embedded-symbols()` (parsed locally)
+4. If no, fall back to `query.query(query)` from host
+
+This enables self-contained modules that can execute project queries without host support when compiled with `--embed-symbols=reachable` or `--embed-symbols=full`.
+
 ---
 
 ## Structured Concurrency (WASI 0.3)
