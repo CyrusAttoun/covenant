@@ -16,6 +16,7 @@ use covenant_llm::{
     Verbosity, ExplainFormat, format_explanation,
 };
 use covenant_requirements::{validate_program, format_report, ReportFormat, filter_uncovered, has_coverage_errors};
+use covenant_optimizer::{optimize, OptSettings, OptLevel};
 
 #[derive(Parser)]
 #[command(name = "covenant")]
@@ -53,6 +54,9 @@ enum Commands {
         /// Target platform (browser, node, wasi). Defaults to node.
         #[arg(long, default_value = "node")]
         target: String,
+        /// Optimization level (0=none, 1=basic, 2=standard, 3=aggressive)
+        #[arg(long, default_value = "0")]
+        optimize: u8,
     },
     /// Query the codebase
     Query {
@@ -117,7 +121,7 @@ async fn main() {
     match cli.command {
         Commands::Parse { file, pretty } => cmd_parse(&file, pretty),
         Commands::Check { files, requirements } => cmd_check(&files, requirements),
-        Commands::Compile { file, output, target } => cmd_compile(&file, output, &target),
+        Commands::Compile { file, output, target, optimize: opt_level } => cmd_compile(&file, output, &target, opt_level),
         Commands::Query { files, query } => cmd_query(&files, &query),
         Commands::Info { file } => cmd_info(&file),
         Commands::Explain { file, format, verbosity, no_cache } => {
@@ -263,13 +267,21 @@ fn cmd_check(files: &[PathBuf], validate_requirements: bool) {
     }
 }
 
-fn cmd_compile(file: &PathBuf, output: Option<PathBuf>, target: &str) {
+fn cmd_compile(file: &PathBuf, output: Option<PathBuf>, target: &str, opt_level: u8) {
     // Validate target platform
     let valid_targets = ["browser", "node", "wasi"];
     if !valid_targets.contains(&target) {
         eprintln!("Invalid target '{}'. Valid targets: browser, node, wasi", target);
         std::process::exit(1);
     }
+
+    // Map optimization level
+    let opt_level = match opt_level {
+        0 => OptLevel::O0,
+        1 => OptLevel::O1,
+        2 => OptLevel::O2,
+        _ => OptLevel::O3,
+    };
 
     let source = match fs::read_to_string(file) {
         Ok(s) => s,
@@ -279,7 +291,7 @@ fn cmd_compile(file: &PathBuf, output: Option<PathBuf>, target: &str) {
         }
     };
 
-    let program = match parse(&source) {
+    let mut program = match parse(&source) {
         Ok(p) => p,
         Err(e) => {
             report_parse_error(&source, file, &e);
@@ -297,6 +309,31 @@ fn cmd_compile(file: &PathBuf, output: Option<PathBuf>, target: &str) {
             std::process::exit(1);
         }
     };
+
+    // Run optimizer if level > 0
+    if opt_level != OptLevel::O0 {
+        let settings = OptSettings {
+            level: opt_level,
+            emit_warnings: true,
+        };
+
+        // Optimize each snippet's body
+        if let covenant_ast::Program::Snippets { ref mut snippets, .. } = program {
+            for snippet in snippets.iter_mut() {
+                // Find the body section and optimize its steps
+                for section in snippet.sections.iter_mut() {
+                    if let covenant_ast::Section::Body(ref mut body) = section {
+                        let opt_result = optimize(&mut body.steps, &settings);
+
+                        // Report warnings
+                        for warning in &opt_result.warnings {
+                            eprintln!("{}: {}", warning.code, warning.message);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     match compile_pure(&program, &result.symbols) {
         Ok(wasm) => {

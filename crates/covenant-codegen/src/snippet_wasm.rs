@@ -287,6 +287,10 @@ impl<'a> SnippetWasmCompiler<'a> {
             Operation::Concat | Operation::Contains => {
                 return Err(CodegenError::UnsupportedType { ty: "String".to_string() });
             }
+            // All other operations are not yet supported in WASM codegen
+            _ => {
+                return Err(CodegenError::UnsupportedExpression);
+            }
         }
 
         Ok(())

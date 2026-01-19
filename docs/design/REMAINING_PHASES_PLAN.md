@@ -11,7 +11,7 @@ This document outlines the implementation plan for the remaining compiler phases
 | 3 | Effect Checker | ✅ Complete | `covenant-checker` |
 | 4 | Type Checker | ✅ Complete | `covenant-checker` |
 | 5 | Requirement Validator | ✅ Complete | `covenant-requirements` |
-| 6 | IR Optimizer | ❌ Not Started | — |
+| 6 | IR Optimizer | ✅ Complete | `covenant-optimizer` |
 | 7 | WASM Emitter | 🔄 Partial | `covenant-codegen` |
 
 ---

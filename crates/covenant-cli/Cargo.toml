@@ -17,6 +17,7 @@ covenant-graph = { workspace = true }
 covenant-codegen = { workspace = true }
 covenant-llm = { workspace = true }
 covenant-requirements = { workspace = true }
+covenant-optimizer = { workspace = true }
 clap = { workspace = true }
 ariadne = { workspace = true }
 serde_json = { workspace = true }

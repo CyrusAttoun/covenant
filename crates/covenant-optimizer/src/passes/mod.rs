@@ -1,14 +1,26 @@
-//! Optimization pass infrastructure
+//! Optimization pass infrastructure and implementations
+//!
+//! This module provides the `OptimizationPass` trait and concrete pass implementations.
+
+pub mod constant_fold;
+pub mod dead_code;
+pub mod unused_binding;
+
+pub use constant_fold::ConstantFolding;
+pub use dead_code::DeadCodeElimination;
+pub use unused_binding::UnusedBindingDetection;
+
+use covenant_ast::Step;
 
 /// Optimization level controlling which passes run
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum OptLevel {
     /// No optimization - useful for debugging
     #[default]
     O0,
-    /// Basic optimizations (dead code elimination)
+    /// Basic optimizations (dead code detection, warnings only)
     O1,
-    /// Standard optimizations (dead code + constant folding)
+    /// Standard optimizations (constant folding + dead code removal)
     O2,
     /// Aggressive optimizations (all passes)
     O3,
@@ -30,6 +42,12 @@ impl Default for OptSettings {
             emit_warnings: true,
         }
     }
+}
+
+/// Context passed to optimization passes
+#[derive(Debug, Clone)]
+pub struct OptContext {
+    pub settings: OptSettings,
 }
 
 /// Result of running an optimization pass
@@ -57,6 +75,6 @@ pub trait OptimizationPass {
     /// Name of this pass for logging/debugging
     fn name(&self) -> &'static str;
 
-    /// Run the optimization pass on the IR
-    fn run(&self, ir: &mut super::OptimizableIR, ctx: &super::OptContext) -> PassResult;
+    /// Run the optimization pass on the steps
+    fn run(&self, steps: &mut Vec<Step>, ctx: &OptContext) -> PassResult;
 }
