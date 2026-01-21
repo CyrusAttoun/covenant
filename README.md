@@ -1,89 +1,107 @@
 # Covenant
 
-**A programming language where code is queryable data.**
+**A language designed for AI to generate and navigate.**
 
-Covenant is designed for a future where AI agents and humans collaborate on codebases. Traditional languages optimize for human authorship—Covenant optimizes for machine comprehension without sacrificing readability.
-
----
-
-## The Problem
-
-AI coding agents struggle with existing codebases:
-
-- They parse **text**, not semantic structure
-- They must **search and guess** instead of query
-- Tool use is **probabilistic**, not contractual
-- Each task starts from scratch—benefits don't compound
-- Reliability degrades as codebases grow larger
-
-We've been writing code for humans to read and machines to execute. But now machines need to *understand* code too—and grep isn't good enough.
+Covenant is not a language for humans to write by hand. It's an intermediate representation (IR) optimized for machine generation—deterministic structure, queryable symbols, explicit effects. Humans work in natural language; the AI generates and navigates the IR.
 
 ---
 
-## The Vision
+## Why AI-First?
 
-> *Humans write contracts. AI navigates structure. Tools do the work. Every line makes the next easier.*
+Traditional languages optimize for human authorship. Covenant optimizes for machine generation:
 
-Covenant separates concerns across four layers:
+| Design Choice | Why It Helps AI |
+|---------------|-----------------|
+| **No operators** | Keywords only (`add`, `equals`, `and`)—no symbol ambiguity |
+| **SSA form** | One operation per step, no nesting to parse |
+| **Canonical ordering** | One valid way to write everything—deterministic output |
+| **Small grammar** | ~50 keywords, predictable token sequences |
+| **Every node has ID** | Precise queries and references, no guessing |
+
+The result: AI can generate valid code reliably and navigate codebases through structured queries instead of text search.
+
+---
+
+## Effects Are Explicit
+
+Every snippet declares what capabilities it needs. No effects section means pure:
+
+```covenant
+snippet id="user.get_by_id" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="get_by_id"
+    param name="id" type="Int"
+    returns type="User" optional
+  end
+end
+
+body
+  step id="s1" kind="query"
+    target="app_db"
+    select all
+    from="users"
+    where
+      equals field="id" var="id"
+    end
+    limit=1
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+```
+
+Effects propagate transitively—if A calls B, A inherits B's effects. The compiler enforces this.
+
+**Why this matters for AI:** Explicit contracts let AI close the loop. The signature defines what to test, the effects define what to mock, and requirements link to coverage. AI can generate code, generate tests, run them, and iterate—without human intervention.
+
+---
+
+## The Query System
+
+Query your codebase like a database. Find all functions that use the database:
+
+```covenant
+step id="s1" kind="query"
+  target="project"
+  select all
+  from="functions"
+  where
+    contains field="effects" lit="database"
+  end
+  as="db_functions"
+end
+```
+
+The same query syntax works for external databases (with dialect-specific SQL in `body` blocks) and for the codebase itself. The `target` determines semantics.
+
+The compiler computes bidirectional references for every symbol:
+- `called_by` / `calls`
+- `references` / `referenced_by`
+- `effects` (full transitive closure)
+- `tests` / `requirements`
+
+No grep. No guessing. Structured queries over a semantic graph.
+
+---
+
+## The Four-Layer Model
 
 | Layer | Purpose | Lifetime |
 |-------|---------|----------|
-| **Natural Language** | Human↔AI communication | Ephemeral (discarded after translation) |
-| **Source Code** | Contracts, intent, constraints | Permanent artifact |
-| **AST** | Queryable symbol graph | What AI agents operate against |
-| **Bytecode** | WASM execution | Sandboxed, metered, deterministic |
-
-The key insight: **source code should be as queryable as a database**. Not through text search, but through structured queries over a semantic graph.
-
----
-
-## Core Principles
-
-### Code is Data
-Every symbol has computed metadata—who calls it, what it calls, what effects it has. Query your codebase like you query a database:
-
-```covenant
-find_db_functions() -> FunctionInfo[]
-    import { project } from meta
-{
-    query project {
-        select * from functions
-        where effects contains "database"
-    }
-}
-```
-
-### Contracts, Not Comments
-Types encode what a function *can* do, not just what it returns. Effects are declared as imports—capabilities, not annotations:
-
-```covenant
-get_user(id: Int) -> User | DbError
-    import { app_db } from database
-{
-    query app_db {
-        select * from users where id = id limit 1
-    }
-}
-```
-
-The function signature tells you everything: it takes an `Int`, returns a `User` or a `DbError`, and requires database access to `app_db`. No hidden side effects.
-
-### Bidirectional References
-The compiler computes `called_by` for every function. Find all callers without grep:
-
-```covenant
-find_auth_callers() -> FunctionInfo[]
-    import { project } from meta
-{
-    query project {
-        select * from functions
-        where calls contains "authenticate"
-    }
-}
-```
-
-### Compounding Clarity
-Each function you write makes the next one easier. Typed contracts, queryable structure, and computed metadata mean AI agents can navigate with precision instead of probability.
+| **Natural Language** | Human↔AI communication | Ephemeral |
+| **IR (Source)** | Machine-readable contracts | Permanent artifact |
+| **Symbol Graph** | Queryable, bidirectional refs | Derived by compiler |
+| **Bytecode** | WASM execution | Sandboxed, metered |
 
 ---
 
@@ -91,21 +109,11 @@ Each function you write makes the next one easier. Typed contracts, queryable st
 
 | Traditional Languages | Covenant |
 |-----------------------|----------|
-| Search code with grep/regex | Query code with SQL-like syntax |
-| Effects are implicit | Effects declared as imports |
-| "Who calls this?" requires tooling | `called_by` computed automatically |
-| Comments describe intent | Types encode intent |
-| Each file is isolated text | Codebase is a queryable graph |
-
-**Unified query syntax**: The same SQL-like syntax works for databases *and* source code. The import determines semantics:
-
-```covenant
-// Query external database (compiles to SQL)
-query app_db { select * from users where is_active = true }
-
-// Query source code (compiles to AST traversal)
-query project { select * from functions where is_exported = false and called_by = [] }
-```
+| `x + y * z` | `op=add`, `op=mul` (keywords, SSA) |
+| Effects implicit | `effects` block declares capabilities |
+| grep for callers | `called_by` computed automatically |
+| Comments describe intent | Types and effects encode intent |
+| Files are text | Codebase is a queryable graph |
 
 **WASM target**: Compiles to WebAssembly for sandboxed, capability-constrained, metered execution.
 
