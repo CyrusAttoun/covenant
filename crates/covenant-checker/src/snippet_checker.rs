@@ -23,6 +23,8 @@ pub struct SnippetChecker {
     function_returns: HashMap<String, ResolvedType>,
     /// Registry of struct and enum type definitions
     type_registry: TypeRegistry,
+    /// Expected return type for current function being checked
+    current_return_type: Option<ResolvedType>,
 }
 
 impl SnippetChecker {
@@ -34,6 +36,7 @@ impl SnippetChecker {
             locals: HashMap::new(),
             function_returns: HashMap::new(),
             type_registry: TypeRegistry::new(),
+            current_return_type: None,
         }
     }
 
@@ -113,7 +116,7 @@ impl SnippetChecker {
     /// Check a function snippet
     fn check_function_snippet(&mut self, snippet: &Snippet) {
         // Extract what we need without holding references
-        let (params_info, steps_cloned) = {
+        let (params_info, steps_cloned, expected_return) = {
             let sig = match find_function_signature(snippet) {
                 Some(s) => s,
                 None => {
@@ -133,7 +136,10 @@ impl SnippetChecker {
                 .map(|p| (p.name.clone(), self.resolve_type(&p.ty)))
                 .collect();
 
-            (params_info, body.steps.clone())
+            let expected_return = sig.returns.as_ref()
+                .map(|r| self.resolve_return_type(r));
+
+            (params_info, body.steps.clone(), expected_return)
         };
 
         // Set up local scope with parameters
@@ -142,10 +148,16 @@ impl SnippetChecker {
             self.locals.insert(name, ty);
         }
 
+        // Set expected return type for this function
+        self.current_return_type = expected_return;
+
         // Check each step
         for step in &steps_cloned {
             self.check_step(step);
         }
+
+        // Clear expected return type after checking
+        self.current_return_type = None;
     }
 
     /// Check a single step and add its binding to locals
@@ -201,8 +213,29 @@ impl SnippetChecker {
             Operation::Less | Operation::Greater |
             Operation::LessEq | Operation::GreaterEq => ResolvedType::Bool,
 
-            // Boolean operations: return Bool
-            Operation::And | Operation::Or | Operation::Not => ResolvedType::Bool,
+            // Boolean operations: require Bool inputs, return Bool
+            Operation::And | Operation::Or => {
+                for input_type in &input_types {
+                    if !matches!(input_type, ResolvedType::Bool) {
+                        self.errors.push(CheckError::TypeMismatch {
+                            expected: "Bool".to_string(),
+                            found: input_type.display(),
+                        });
+                    }
+                }
+                ResolvedType::Bool
+            }
+            Operation::Not => {
+                if let Some(input_type) = input_types.first() {
+                    if !matches!(input_type, ResolvedType::Bool) {
+                        self.errors.push(CheckError::TypeMismatch {
+                            expected: "Bool".to_string(),
+                            found: input_type.display(),
+                        });
+                    }
+                }
+                ResolvedType::Bool
+            }
 
             // Negation: same as input type
             Operation::Neg => input_types.first().cloned().unwrap_or(ResolvedType::Int),
@@ -418,7 +451,7 @@ impl SnippetChecker {
 
     /// Infer type of a return step
     fn infer_return_step(&mut self, ret: &ReturnStep) -> ResolvedType {
-        match &ret.value {
+        let inferred = match &ret.value {
             ReturnValue::Var(name) => {
                 self.locals.get(name).cloned().unwrap_or_else(|| {
                     self.errors.push(CheckError::UndefinedSymbol { name: name.clone() });
@@ -438,7 +471,19 @@ impl SnippetChecker {
                     args: vec![],
                 }
             }
+        };
+
+        // Check against expected return type
+        if let Some(ref expected) = self.current_return_type {
+            if !self.types_compatible(expected, &inferred) {
+                self.errors.push(CheckError::TypeMismatch {
+                    expected: expected.display(),
+                    found: inferred.display(),
+                });
+            }
         }
+
+        inferred
     }
 
     /// Infer type of an if step
@@ -613,10 +658,18 @@ impl SnippetChecker {
     }
 
     /// Resolve an input's type
-    fn resolve_input_type(&self, input: &Input) -> ResolvedType {
+    fn resolve_input_type(&mut self, input: &Input) -> ResolvedType {
         match &input.source {
             InputSource::Var(name) => {
-                self.locals.get(name).cloned().unwrap_or(ResolvedType::Unknown)
+                match self.locals.get(name) {
+                    Some(ty) => ty.clone(),
+                    None => {
+                        self.errors.push(CheckError::UndefinedSymbol {
+                            name: name.clone(),
+                        });
+                        ResolvedType::Error
+                    }
+                }
             }
             InputSource::Lit(lit) => self.literal_type(lit),
             InputSource::Field { of, field } => {
@@ -644,6 +697,86 @@ impl SnippetChecker {
             Literal::Bool(_) => ResolvedType::Bool,
             Literal::String(_) => ResolvedType::String,
             Literal::None => ResolvedType::None,
+        }
+    }
+
+    /// Check if two types are compatible
+    fn types_compatible(&self, expected: &ResolvedType, found: &ResolvedType) -> bool {
+        match (expected, found) {
+            // Unknown and Error types are compatible with anything
+            (ResolvedType::Unknown, _) | (_, ResolvedType::Unknown) => true,
+            (ResolvedType::Error, _) | (_, ResolvedType::Error) => true,
+
+            // Primitive types
+            (ResolvedType::Int, ResolvedType::Int) => true,
+            (ResolvedType::Float, ResolvedType::Float) => true,
+            (ResolvedType::Float, ResolvedType::Int) => true, // Int can be used as Float
+            (ResolvedType::Bool, ResolvedType::Bool) => true,
+            (ResolvedType::String, ResolvedType::String) => true,
+            (ResolvedType::Char, ResolvedType::Char) => true,
+            (ResolvedType::Bytes, ResolvedType::Bytes) => true,
+            (ResolvedType::DateTime, ResolvedType::DateTime) => true,
+            (ResolvedType::None, ResolvedType::None) => true,
+
+            // Optional types
+            (ResolvedType::Optional(_), ResolvedType::None) => true,
+            (ResolvedType::Optional(e), ResolvedType::Optional(f)) => self.types_compatible(e, f),
+            (ResolvedType::Optional(e), f) => self.types_compatible(e, f),
+
+            // List types
+            (ResolvedType::List(e), ResolvedType::List(f)) => self.types_compatible(e, f),
+
+            // Set types
+            (ResolvedType::Set(e), ResolvedType::Set(f)) => self.types_compatible(e, f),
+
+            // Union types - value must be compatible with at least one member
+            (ResolvedType::Union(members), found) => {
+                members.iter().any(|m| self.types_compatible(m, found))
+            }
+
+            // Assigning union to non-union - all members must be compatible
+            (expected, ResolvedType::Union(members)) => {
+                members.iter().all(|m| self.types_compatible(expected, m))
+            }
+
+            // Tuple types - all elements must match
+            (ResolvedType::Tuple(e), ResolvedType::Tuple(f)) => {
+                e.len() == f.len()
+                    && e.iter().zip(f).all(|(a, b)| self.types_compatible(a, b))
+            }
+
+            // Named types with generic args
+            (
+                ResolvedType::Named { name: n1, args: a1, .. },
+                ResolvedType::Named { name: n2, args: a2, .. },
+            ) => {
+                n1 == n2
+                    && a1.len() == a2.len()
+                    && a1.iter().zip(a2).all(|(t1, t2)| self.types_compatible(t1, t2))
+            }
+
+            // Struct types - all fields must match
+            (ResolvedType::Struct(e), ResolvedType::Struct(f)) => {
+                e.len() == f.len()
+                    && e.iter().all(|(name, ty)| {
+                        f.iter()
+                            .find(|(n, _)| n == name)
+                            .map(|(_, t)| self.types_compatible(ty, t))
+                            .unwrap_or(false)
+                    })
+            }
+
+            // Function types
+            (
+                ResolvedType::Function { params: p1, ret: r1 },
+                ResolvedType::Function { params: p2, ret: r2 },
+            ) => {
+                p1.len() == p2.len()
+                    && p1.iter().zip(p2).all(|(a, b)| self.types_compatible(a, b))
+                    && self.types_compatible(r1, r2)
+            }
+
+            _ => false,
         }
     }
 

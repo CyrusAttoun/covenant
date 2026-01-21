@@ -394,6 +394,7 @@ fn step_kind_str(kind: &StepKind) -> String {
         StepKind::Delete(_) => "delete".to_string(),
         StepKind::Transaction(_) => "transaction".to_string(),
         StepKind::Traverse(_) => "traverse".to_string(),
+        StepKind::Construct(_) => "construct".to_string(),
     }
 }
 

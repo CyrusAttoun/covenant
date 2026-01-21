@@ -123,6 +123,11 @@ fn collect_consumed_bindings(kind: &StepKind, consumed: &mut HashSet<String>) {
         StepKind::Traverse(traverse) => {
             consumed.insert(traverse.from.clone());
         }
+        StepKind::Construct(construct) => {
+            for field in &construct.fields {
+                collect_from_input_source(&field.value, consumed);
+            }
+        }
     }
 }
 

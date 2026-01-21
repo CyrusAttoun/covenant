@@ -69,6 +69,8 @@ covenant-parser = { workspace = true }
 # Dependencies for integration tests in tests/
 covenant-storage = { workspace = true }
 covenant-checker = { workspace = true }
+covenant-symbols = { workspace = true }
+covenant-codegen = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { version = "0.11", features = ["json"] }
