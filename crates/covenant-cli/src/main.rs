@@ -112,6 +112,14 @@ enum Commands {
     },
     /// Interactive REPL
     Repl,
+    /// Compile and run a file
+    Run {
+        /// Input file
+        file: PathBuf,
+        /// Optimization level (0=none, 1=basic, 2=standard, 3=aggressive)
+        #[arg(long, default_value = "0")]
+        optimize: u8,
+    },
 }
 
 #[tokio::main]
@@ -132,6 +140,7 @@ async fn main() {
             cmd_requirements(&files, &report, uncovered_only, min_coverage, strict);
         }
         Commands::Repl => cmd_repl(),
+        Commands::Run { file, optimize: opt_level } => cmd_run(&file, opt_level),
     }
 }
 
@@ -859,6 +868,124 @@ fn cmd_repl() {
     }
 
     println!("Goodbye!");
+}
+
+fn cmd_run(file: &PathBuf, opt_level: u8) {
+    use std::process::Command;
+
+    // Map optimization level
+    let opt_level = match opt_level {
+        0 => OptLevel::O0,
+        1 => OptLevel::O1,
+        2 => OptLevel::O2,
+        _ => OptLevel::O3,
+    };
+
+    let source = match fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let mut program = match parse(&source) {
+        Ok(p) => p,
+        Err(e) => {
+            report_parse_error(&source, file, &e);
+            std::process::exit(1);
+        }
+    };
+
+    let result = match check(&program) {
+        Ok(r) => r,
+        Err(errors) => {
+            eprintln!("Type check errors:");
+            for err in errors {
+                eprintln!("  {}", err);
+            }
+            std::process::exit(1);
+        }
+    };
+
+    // Run optimizer if level > 0
+    if opt_level != OptLevel::O0 {
+        let settings = OptSettings {
+            level: opt_level,
+            emit_warnings: true,
+        };
+
+        if let covenant_ast::Program::Snippets { ref mut snippets, .. } = program {
+            for snippet in snippets.iter_mut() {
+                for section in snippet.sections.iter_mut() {
+                    if let covenant_ast::Section::Body(ref mut body) = section {
+                        let opt_result = optimize(&mut body.steps, &settings);
+                        for warning in &opt_result.warnings {
+                            eprintln!("{}: {}", warning.code, warning.message);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Compile to WASM
+    let wasm = match compile_pure(&program, &result.symbols) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("Compilation error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Write to temp file
+    let temp_wasm = std::env::temp_dir().join("covenant_run.wasm");
+    if let Err(e) = fs::write(&temp_wasm, &wasm) {
+        eprintln!("Error writing temp file: {}", e);
+        std::process::exit(1);
+    }
+
+    // Find the runner script
+    // First try relative to executable, then relative to current directory
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+    let runner_paths = [
+        exe_dir.as_ref().map(|d| d.join("../../host/run.mjs")).unwrap_or_default(),
+        PathBuf::from("host/run.mjs"),
+        PathBuf::from("../host/run.mjs"),
+    ];
+
+    let runner = runner_paths.iter()
+        .find(|p| p.exists())
+        .cloned()
+        .unwrap_or_else(|| {
+            eprintln!("Error: Could not find host/run.mjs");
+            eprintln!("Make sure you're running from the covenant project directory");
+            std::process::exit(1);
+        });
+
+    // Run with Node.js
+    let status = Command::new("node")
+        .arg(&runner)
+        .arg(&temp_wasm)
+        .status();
+
+    // Clean up temp file
+    let _ = fs::remove_file(&temp_wasm);
+
+    match status {
+        Ok(s) if s.success() => {}
+        Ok(s) => {
+            std::process::exit(s.code().unwrap_or(1));
+        }
+        Err(e) => {
+            eprintln!("Error running node: {}", e);
+            eprintln!("Make sure Node.js is installed and in your PATH");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn report_parse_error(source: &str, file: &PathBuf, error: &covenant_parser::ParseError) {

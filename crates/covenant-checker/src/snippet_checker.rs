@@ -29,7 +29,7 @@ pub struct SnippetChecker {
 
 impl SnippetChecker {
     pub fn new() -> Self {
-        Self {
+        let mut checker = Self {
             symbols: SymbolTable::new(),
             effects: EffectTable::new(),
             errors: Vec::new(),
@@ -37,7 +37,45 @@ impl SnippetChecker {
             function_returns: HashMap::new(),
             type_registry: TypeRegistry::new(),
             current_return_type: None,
-        }
+        };
+        checker.register_builtins();
+        checker
+    }
+
+    /// Register built-in runtime functions (console, math, etc.)
+    fn register_builtins(&mut self) {
+        // console.println - prints a string to stdout
+        self.symbols.define(
+            "console.println".to_string(),
+            SymbolKind::Function {
+                params: vec![("message".to_string(), ResolvedType::String)],
+                effects: vec!["console".to_string()],
+            },
+            ResolvedType::None,
+        );
+        self.function_returns.insert("console.println".to_string(), ResolvedType::None);
+
+        // console.print - prints without newline
+        self.symbols.define(
+            "console.print".to_string(),
+            SymbolKind::Function {
+                params: vec![("message".to_string(), ResolvedType::String)],
+                effects: vec!["console".to_string()],
+            },
+            ResolvedType::None,
+        );
+        self.function_returns.insert("console.print".to_string(), ResolvedType::None);
+
+        // console.error - prints to stderr
+        self.symbols.define(
+            "console.error".to_string(),
+            SymbolKind::Function {
+                params: vec![("message".to_string(), ResolvedType::String)],
+                effects: vec!["console".to_string()],
+            },
+            ResolvedType::None,
+        );
+        self.function_returns.insert("console.error".to_string(), ResolvedType::None);
     }
 
     /// Check all snippets and return the result

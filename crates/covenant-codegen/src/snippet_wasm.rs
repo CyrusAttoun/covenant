@@ -469,7 +469,7 @@ impl<'a> SnippetWasmCompiler<'a> {
             if step.output_binding != "_" {
                 count += 1;
             }
-            // Count nested steps in if/match
+            // Count nested steps and special cases
             match &step.kind {
                 StepKind::If(if_step) => {
                     count += self.count_step_bindings(&if_step.then_steps);
@@ -490,6 +490,12 @@ impl<'a> SnippetWasmCompiler<'a> {
                     // Count: index local, length local, item local
                     count += 3;
                     count += self.count_step_bindings(&for_step.steps);
+                }
+                StepKind::Call(call) => {
+                    // Runtime calls to console.* need a temp local for fat pointer unpacking
+                    if call.fn_name.starts_with("console.") {
+                        count += 1;
+                    }
                 }
                 _ => {}
             }
@@ -879,6 +885,13 @@ impl<'a> SnippetWasmCompiler<'a> {
 
     /// Compile a call step
     fn compile_call_step(&mut self, call: &CallStep, func: &mut Function) -> Result<(), CodegenError> {
+        // Check for runtime/builtin functions first
+        if let Some(idx) = self.try_compile_runtime_call(call, func)? {
+            func.instruction(&Instruction::Call(idx));
+            return Ok(());
+        }
+
+        // Regular user-defined function call
         // Push arguments onto stack
         for arg in &call.args {
             self.compile_input(&arg.source, func)?;
@@ -890,6 +903,50 @@ impl<'a> SnippetWasmCompiler<'a> {
 
         func.instruction(&Instruction::Call(*idx));
         Ok(())
+    }
+
+    /// Try to compile a call to a runtime/builtin function
+    /// Returns Some(import_index) if this is a runtime function, None otherwise
+    fn try_compile_runtime_call(&mut self, call: &CallStep, func: &mut Function) -> Result<Option<u32>, CodegenError> {
+        match call.fn_name.as_str() {
+            "console.println" | "console.print" | "console.error" => {
+                // These functions take a String argument and call covenant_io.print
+                let print_fn = self.runtime.io_print
+                    .ok_or_else(|| CodegenError::UndefinedFunction {
+                        name: "covenant_io.print (console effect not declared?)".to_string()
+                    })?;
+
+                // Compile the message argument - this produces an i64 fat pointer on the stack
+                if let Some(arg) = call.args.first() {
+                    self.compile_input(&arg.source, func)?;
+                } else {
+                    return Err(CodegenError::UndefinedFunction {
+                        name: format!("{} requires a message argument", call.fn_name)
+                    });
+                }
+
+                // The argument is an i64 fat pointer: (offset << 32) | len
+                // We need to unpack it into two i32 values for the print import
+                // Allocate a temp local if we don't have one
+                let temp_local = self.allocate_local("__temp_fat_ptr");
+
+                // Store the fat pointer to temp local
+                func.instruction(&Instruction::LocalSet(temp_local));
+
+                // Extract offset (shift right 32, wrap to i32)
+                func.instruction(&Instruction::LocalGet(temp_local));
+                func.instruction(&Instruction::I64Const(32));
+                func.instruction(&Instruction::I64ShrU);
+                func.instruction(&Instruction::I32WrapI64);
+
+                // Extract length (mask lower 32 bits, wrap to i32)
+                func.instruction(&Instruction::LocalGet(temp_local));
+                func.instruction(&Instruction::I32WrapI64);
+
+                Ok(Some(print_fn))
+            }
+            _ => Ok(None),
+        }
     }
 
     /// Compile a return step
