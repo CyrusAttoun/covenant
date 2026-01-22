@@ -1,0 +1,479 @@
+// std.storage Integration Tests
+// Integration tests verify cross-module scenarios that exercise
+// multiple stdlib functions together in realistic use cases.
+// Test naming: T-INT-XXX
+// Test kind: integration
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="std.storage.integration.tests" kind="test"
+
+effects
+  effect storage
+end
+
+tests
+  // ==========================================
+  // Integration Test 1: KV Cache for Documents
+  // ==========================================
+
+  test id="T-INT-001" kind="integration" covers="R-KV-001,R-DOC-001"
+    // Scenario: Use KV store to cache document data
+// This is a common pattern where KV provides fast lookups
+// while documents store the full data.
+
+    // Step 1: Store document in doc store
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="users"
+      arg name="id" lit="user-cache-test"
+      arg name="data" lit="{\"name\": \"CacheTestUser\", \"email\": \"cache@test.com\", \"role\": \"admin\"}"
+      as="doc"
+    end
+
+    // Step 2: Build cache key
+    step id="s2" kind="compute"
+      op=concat
+      input lit="cache:user:"
+      input lit="user-cache-test"
+      as="cache_key"
+    end
+
+    // Step 3: Stringify document data for KV cache
+    step id="s3" kind="compute"
+      op=to_string
+      input field="data" of="doc"
+      as="json_str"
+    end
+
+    // Step 4: Store in KV cache
+    step id="s4" kind="call"
+      fn="storage_kv_set"
+      arg name="key" from="cache_key"
+      arg name="value" from="json_str"
+      as="_"
+    end
+
+    // Step 5: Retrieve from KV cache
+    step id="s5" kind="call"
+      fn="storage_kv_get"
+      arg name="key" from="cache_key"
+      as="cached"
+    end
+
+    // Step 6: Parse cached JSON
+    step id="s6" kind="match"
+      on="cached"
+
+      case variant type="Some" bindings=("json_str")
+        step id="s6a" kind="compute"
+          op=to_string
+          input var="json_str"
+          as="parsed"
+        end
+        step id="s6b" kind="compute"
+          op=map_get
+          input var="parsed"
+          input lit="name"
+          as="cached_name"
+        end
+      end
+
+      case variant type="None"
+        step id="s6c" kind="bind"
+          lit=""
+          as="cached_name"
+        end
+      end
+
+      as="_"
+    end
+
+    // Step 7: Verify cache contains correct data
+    step id="s7" kind="compute"
+      op=equals
+      input var="cached_name"
+      input lit="CacheTestUser"
+      as="cache_works"
+    end
+
+    step id="s8" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="cache_works"
+      arg name="message" lit="KV cache should correctly store and retrieve document data"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s9" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" from="cache_key"
+      as="_"
+    end
+
+    step id="s10" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="users"
+      arg name="id" lit="user-cache-test"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Integration Test 2: Namespaced Preferences
+  // ==========================================
+
+  test id="T-INT-002" kind="integration" covers="R-KV-005,R-KV-006"
+    // Scenario: Use namespaced KV keys to store user preferences
+// Pattern: "prefs:{user_id}:{pref_key}"
+// This allows listing all prefs for a user and clearing per-user.
+
+    // Step 1: Set preferences for user1
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="prefs:user1:theme"
+      arg name="value" lit="dark"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="prefs:user1:language"
+      arg name="value" lit="en"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="prefs:user1:timezone"
+      arg name="value" lit="UTC"
+      as="_"
+    end
+
+    // Step 2: Set preferences for user2
+    step id="s4" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="prefs:user2:theme"
+      arg name="value" lit="light"
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="prefs:user2:language"
+      arg name="value" lit="es"
+      as="_"
+    end
+
+    // Step 3: List user1's preferences
+    step id="s6" kind="call"
+      fn="storage_kv_list"
+      arg name="prefix" lit="prefs:user1:"
+      as="user1_prefs"
+    end
+
+    step id="s7" kind="compute"
+      op=list_len
+      input var="user1_prefs"
+      as="user1_count"
+    end
+
+    step id="s8" kind="compute"
+      op=equals
+      input var="user1_count"
+      input lit=3
+      as="user1_has_three"
+    end
+
+    step id="s9" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="user1_has_three"
+      arg name="message" lit="user1 should have 3 preferences"
+      as="_"
+    end
+
+    // Step 4: List user2's preferences
+    step id="s10" kind="call"
+      fn="storage_kv_list"
+      arg name="prefix" lit="prefs:user2:"
+      as="user2_prefs"
+    end
+
+    step id="s11" kind="compute"
+      op=list_len
+      input var="user2_prefs"
+      as="user2_count"
+    end
+
+    step id="s12" kind="compute"
+      op=equals
+      input var="user2_count"
+      input lit=2
+      as="user2_has_two"
+    end
+
+    step id="s13" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="user2_has_two"
+      arg name="message" lit="user2 should have 2 preferences"
+      as="_"
+    end
+
+    // Step 5: Clear user1's preferences only
+    step id="s14" kind="call"
+      fn="storage_kv_clear"
+      arg name="prefix" lit="prefs:user1:"
+      as="_"
+    end
+
+    // Step 6: Verify user1 prefs cleared, user2 preserved
+    step id="s15" kind="call"
+      fn="storage_kv_has"
+      arg name="key" lit="prefs:user1:theme"
+      as="user1_still_exists"
+    end
+
+    step id="s16" kind="call"
+      fn="storage_kv_has"
+      arg name="key" lit="prefs:user2:theme"
+      as="user2_still_exists"
+    end
+
+    step id="s17" kind="compute"
+      op=not
+      input var="user1_still_exists"
+      as="user1_cleared"
+    end
+
+    step id="s18" kind="compute"
+      op=and
+      input var="user1_cleared"
+      input var="user2_still_exists"
+      as="selective_clear_works"
+    end
+
+    step id="s19" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="selective_clear_works"
+      arg name="message" lit="clear should only remove user1 prefs, preserving user2"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s20" kind="call"
+      fn="storage_kv_clear"
+      arg name="prefix" lit="prefs:"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Integration Test 3: Complex Query Pipeline
+  // ==========================================
+
+  test id="T-INT-003" kind="integration" covers="R-DOC-011,R-DOC-014,R-DOC-015"
+    // Scenario: Complex product query with filter, sort, and limit
+// This tests a realistic e-commerce query pattern.
+
+    // Step 1: Insert test products
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="products"
+      arg name="id" lit="p1"
+      arg name="data" lit="{\"name\": \"Widget A\", \"price\": 100, \"category\": \"electronics\", \"in_stock\": true}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="products"
+      arg name="id" lit="p2"
+      arg name="data" lit="{\"name\": \"Widget B\", \"price\": 50, \"category\": \"electronics\", \"in_stock\": true}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="products"
+      arg name="id" lit="p3"
+      arg name="data" lit="{\"name\": \"Gadget X\", \"price\": 200, \"category\": \"electronics\", \"in_stock\": false}"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="products"
+      arg name="id" lit="p4"
+      arg name="data" lit="{\"name\": \"Book Y\", \"price\": 20, \"category\": \"books\", \"in_stock\": true}"
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="products"
+      arg name="id" lit="p5"
+      arg name="data" lit="{\"name\": \"Mega Widget\", \"price\": 500, \"category\": \"electronics\", \"in_stock\": true}"
+      as="_"
+    end
+
+    // Step 2: Query electronics, sorted by price desc, limit 2
+    step id="s6" kind="call"
+      fn="storage_doc_query"
+      arg name="collection" lit="products"
+      arg name="filter" lit="{\"category\": \"electronics\"}"
+      arg name="order_by" lit="price"
+      arg name="order_dir" lit="desc"
+      arg name="limit" lit=2
+      as="result"
+    end
+
+    // Step 3: Verify result count
+    step id="s7" kind="compute"
+      op=map_get
+      input var="result"
+      input lit="documents"
+      as="docs"
+    end
+
+    step id="s8" kind="compute"
+      op=list_len
+      input var="docs"
+      as="count"
+    end
+
+    step id="s9" kind="compute"
+      op=equals
+      input var="count"
+      input lit=2
+      as="has_two"
+    end
+
+    step id="s10" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_two"
+      arg name="message" lit="query should return exactly 2 products"
+      as="_"
+    end
+
+    // Step 4: Verify first result is most expensive
+    step id="s11" kind="compute"
+      op=list_get
+      input var="docs"
+      input lit=0
+      as="first_doc"
+    end
+
+    step id="s12" kind="compute"
+      op=map_get
+      input field="data" of="first_doc"
+      input lit="price"
+      as="first_price"
+    end
+
+    step id="s13" kind="compute"
+      op=equals
+      input var="first_price"
+      input lit=500
+      as="most_expensive_first"
+    end
+
+    step id="s14" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="most_expensive_first"
+      arg name="message" lit="first result should be most expensive (Mega Widget at 500)"
+      as="_"
+    end
+
+    // Step 5: Verify second result
+    step id="s15" kind="compute"
+      op=list_get
+      input var="docs"
+      input lit=1
+      as="second_doc"
+    end
+
+    step id="s16" kind="compute"
+      op=map_get
+      input field="data" of="second_doc"
+      input lit="price"
+      as="second_price"
+    end
+
+    step id="s17" kind="compute"
+      op=equals
+      input var="second_price"
+      input lit=200
+      as="second_is_gadget"
+    end
+
+    step id="s18" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="second_is_gadget"
+      arg name="message" lit="second result should be Gadget X at 200"
+      as="_"
+    end
+
+    // Step 6: Verify total count in QueryResult
+    step id="s19" kind="compute"
+      op=map_get
+      input var="result"
+      input lit="total"
+      as="total"
+    end
+
+    step id="s20" kind="compute"
+      op=equals
+      input var="total"
+      input lit=4
+      as="total_is_four"
+    end
+
+    step id="s21" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="total_is_four"
+      arg name="message" lit="total should be 4 (all electronics, even though limit=2)"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s22" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="products"
+      arg name="id" lit="p1"
+      as="_"
+    end
+
+    step id="s23" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="products"
+      arg name="id" lit="p2"
+      as="_"
+    end
+
+    step id="s24" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="products"
+      arg name="id" lit="p3"
+      as="_"
+    end
+
+    step id="s25" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="products"
+      arg name="id" lit="p4"
+      as="_"
+    end
+
+    step id="s26" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="products"
+      arg name="id" lit="p5"
+      as="_"
+    end
+  end
+
+end
+
+end

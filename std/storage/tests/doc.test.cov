@@ -1,0 +1,1105 @@
+// std.storage.doc Test Suite
+// Comprehensive unit tests for the Document Store module.
+// Tests cover all functions: put, get, delete, query, count, create_index
+// Test naming: T-DOC-XXX where XXX is the test number
+// Requirements: R-DOC-XXX defined in requirements section
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="storage_doc_requirements" kind="data"
+
+requires
+  // Core CRUD Requirements
+  req id="R-DOC-001"
+    text "put() stores a document that can be retrieved by get()"
+    priority critical
+  end
+
+  req id="R-DOC-002"
+    text "get() returns none for non-existent documents"
+    priority critical
+  end
+
+  req id="R-DOC-003"
+    text "delete() removes a document so subsequent get() returns none"
+    priority critical
+  end
+
+  req id="R-DOC-004"
+    text "put() returns a Document with correct id, data, and timestamps"
+    priority critical
+  end
+
+  req id="R-DOC-005"
+    text "put() updates updated_at but preserves created_at on overwrite"
+    priority high
+  end
+
+  req id="R-DOC-006"
+    text "delete() returns true if document existed, false otherwise"
+    priority high
+  end
+
+  // Query Requirements
+  req id="R-DOC-010"
+    text "query() without filter returns all documents in collection"
+    priority high
+  end
+
+  req id="R-DOC-011"
+    text "query() with equals filter matches exact field values"
+    priority critical
+  end
+
+  req id="R-DOC-012"
+    text "query() with comparison operators (gt, lt, gte, lte) works correctly"
+    priority high
+  end
+
+  req id="R-DOC-013"
+    text "query() with logical operators (and, or) combines conditions"
+    priority high
+  end
+
+  req id="R-DOC-014"
+    text "query() order_by sorts results correctly (asc and desc)"
+    priority high
+  end
+
+  req id="R-DOC-015"
+    text "query() limit restricts result count"
+    priority high
+  end
+
+  req id="R-DOC-016"
+    text "query() offset skips specified number of results"
+    priority high
+  end
+
+  req id="R-DOC-017"
+    text "query() returns QueryResult with documents array and total count"
+    priority high
+  end
+
+  // Count Requirements
+  req id="R-DOC-020"
+    text "count() returns total documents in collection when no filter"
+    priority high
+  end
+
+  req id="R-DOC-021"
+    text "count() returns matching document count with filter"
+    priority high
+  end
+
+  req id="R-DOC-022"
+    text "count() returns 0 for empty collection"
+    priority medium
+  end
+
+  // Index Requirements
+  req id="R-DOC-030"
+    text "create_index() creates an index that improves query performance"
+    priority medium
+  end
+
+  req id="R-DOC-031"
+    text "create_index() is idempotent - creating twice is safe"
+    priority medium
+  end
+
+  // Edge Cases
+  req id="R-DOC-041"
+    text "Documents with nested JSON are stored and retrieved correctly"
+    priority high
+  end
+
+  req id="R-DOC-042"
+    text "Documents with array fields are stored and queried correctly"
+    priority high
+  end
+
+  req id="R-DOC-044"
+    text "Collections are isolated - documents in one do not affect another"
+    priority critical
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="storage_doc_tests" kind="test"
+
+effects
+  effect storage
+end
+
+tests
+  // ==========================================
+  // Basic CRUD Tests
+  // ==========================================
+
+  test id="T-DOC-001" kind="unit" covers="R-DOC-001"
+    // put then get returns document
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="user-001"
+      arg name="data" lit="{\"name\": \"Alice\", \"email\": \"alice@example.com\"}"
+      as="doc"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_get"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="user-001"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("d")
+        step id="s3a" kind="compute"
+          op=equals
+          input field="id" of="d"
+          input lit="user-001"
+          as="id_matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="id_matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="id_matches"
+      arg name="message" lit="get should return the document that was put"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="user-001"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-002" kind="unit" covers="R-DOC-002"
+    // get returns none for missing document
+    step id="s1" kind="call"
+      fn="storage_doc_get"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="nonexistent-user-xyz-12345"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="None"
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_none"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_none"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_none"
+      arg name="message" lit="get should return none for non-existent document"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-003" kind="unit" covers="R-DOC-003"
+    // delete removes document
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="delete-test-doc"
+      arg name="data" lit="{\"name\": \"ToDelete\"}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="delete-test-doc"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_get"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="delete-test-doc"
+      as="result"
+    end
+
+    step id="s4" kind="match"
+      on="result"
+
+      case variant type="None"
+        step id="s4a" kind="bind"
+          lit=true
+          as="is_deleted"
+        end
+      end
+
+      case wildcard
+        step id="s4b" kind="bind"
+          lit=false
+          as="is_deleted"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_deleted"
+      arg name="message" lit="document should be deleted after delete()"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-004" kind="unit" covers="R-DOC-004"
+    // put returns Document with correct structure
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="struct-test-doc"
+      arg name="data" lit="{\"name\": \"Bob\"}"
+      as="doc"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input field="id" of="doc"
+      input lit="struct-test-doc"
+      as="id_correct"
+    end
+
+    step id="s3" kind="compute"
+      op=not_equals
+      input field="created_at" of="doc"
+      input lit=none
+      as="has_created"
+    end
+
+    step id="s4" kind="compute"
+      op=not_equals
+      input field="updated_at" of="doc"
+      input lit=none
+      as="has_updated"
+    end
+
+    step id="s5" kind="compute"
+      op=and
+      input var="id_correct"
+      input var="has_created"
+      as="temp"
+    end
+
+    step id="s6" kind="compute"
+      op=and
+      input var="temp"
+      input var="has_updated"
+      as="all_correct"
+    end
+
+    step id="s7" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="all_correct"
+      arg name="message" lit="put should return Document with id, created_at, updated_at"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s8" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="struct-test-doc"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-006" kind="unit" covers="R-DOC-006"
+    // delete returns true if existed, false otherwise
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="delete-bool-test"
+      arg name="data" lit="{\"x\": 1}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="delete-bool-test"
+      as="first_delete"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="test_users"
+      arg name="id" lit="delete-bool-test"
+      as="second_delete"
+    end
+
+    step id="s4" kind="compute"
+      op=not
+      input var="second_delete"
+      as="second_is_false"
+    end
+
+    step id="s5" kind="compute"
+      op=and
+      input var="first_delete"
+      input var="second_is_false"
+      as="correct"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="correct"
+      arg name="message" lit="first delete should return true, second should return false"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Query Tests
+  // ==========================================
+
+  test id="T-DOC-010" kind="unit" covers="R-DOC-010"
+    // query without filter returns all documents
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="query_test"
+      arg name="id" lit="q1"
+      arg name="data" lit="{\"name\": \"A\"}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="query_test"
+      arg name="id" lit="q2"
+      arg name="data" lit="{\"name\": \"B\"}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_query"
+      arg name="collection" lit="query_test"
+      as="result"
+    end
+
+    step id="s4" kind="compute"
+      op=map_get
+      input var="result"
+      input lit="documents"
+      as="docs"
+    end
+
+    step id="s5" kind="compute"
+      op=list_len
+      input var="docs"
+      as="count"
+    end
+
+    step id="s6" kind="compute"
+      op=equals
+      input var="count"
+      input lit=2
+      as="has_two"
+    end
+
+    step id="s7" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_two"
+      arg name="message" lit="query without filter should return all documents"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s8" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="query_test"
+      arg name="id" lit="q1"
+      as="_"
+    end
+
+    step id="s9" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="query_test"
+      arg name="id" lit="q2"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-011" kind="unit" covers="R-DOC-011"
+    // query with equals filter matches exact values
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="filter_test"
+      arg name="id" lit="active1"
+      arg name="data" lit="{\"status\": \"active\", \"name\": \"X\"}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="filter_test"
+      arg name="id" lit="inactive1"
+      arg name="data" lit="{\"status\": \"inactive\", \"name\": \"Y\"}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_query"
+      arg name="collection" lit="filter_test"
+      arg name="filter" lit="{\"status\": \"active\"}"
+      as="result"
+    end
+
+    step id="s4" kind="compute"
+      op=map_get
+      input var="result"
+      input lit="documents"
+      as="docs"
+    end
+
+    step id="s5" kind="compute"
+      op=list_len
+      input var="docs"
+      as="count"
+    end
+
+    step id="s6" kind="compute"
+      op=equals
+      input var="count"
+      input lit=1
+      as="one_match"
+    end
+
+    step id="s7" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="one_match"
+      arg name="message" lit="equals filter should match exactly one document"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s8" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="filter_test"
+      arg name="id" lit="active1"
+      as="_"
+    end
+
+    step id="s9" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="filter_test"
+      arg name="id" lit="inactive1"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-012" kind="unit" covers="R-DOC-012"
+    // query with comparison operators
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="compare_test"
+      arg name="id" lit="young"
+      arg name="data" lit="{\"age\": 15}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="compare_test"
+      arg name="id" lit="adult"
+      arg name="data" lit="{\"age\": 25}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="compare_test"
+      arg name="id" lit="senior"
+      arg name="data" lit="{\"age\": 65}"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_doc_query"
+      arg name="collection" lit="compare_test"
+      arg name="filter" lit="{\"age\": {\"$gt\": 18}}"
+      as="result"
+    end
+
+    step id="s5" kind="compute"
+      op=map_get
+      input var="result"
+      input lit="documents"
+      as="docs"
+    end
+
+    step id="s6" kind="compute"
+      op=list_len
+      input var="docs"
+      as="count"
+    end
+
+    step id="s7" kind="compute"
+      op=equals
+      input var="count"
+      input lit=2
+      as="two_adults"
+    end
+
+    step id="s8" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="two_adults"
+      arg name="message" lit="$gt filter should match documents with age > 18"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s9" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="compare_test"
+      arg name="id" lit="young"
+      as="_"
+    end
+
+    step id="s10" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="compare_test"
+      arg name="id" lit="adult"
+      as="_"
+    end
+
+    step id="s11" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="compare_test"
+      arg name="id" lit="senior"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-014" kind="unit" covers="R-DOC-014"
+    // query order_by sorts results
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="order_test"
+      arg name="id" lit="b"
+      arg name="data" lit="{\"name\": \"Bravo\"}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="order_test"
+      arg name="id" lit="a"
+      arg name="data" lit="{\"name\": \"Alpha\"}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="order_test"
+      arg name="id" lit="c"
+      arg name="data" lit="{\"name\": \"Charlie\"}"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_doc_query"
+      arg name="collection" lit="order_test"
+      arg name="order_by" lit="name"
+      arg name="order_dir" lit="asc"
+      as="result"
+    end
+
+    step id="s5" kind="compute"
+      op=map_get
+      input var="result"
+      input lit="documents"
+      as="docs"
+    end
+
+    step id="s6" kind="compute"
+      op=list_get
+      input var="docs"
+      input lit=0
+      as="first"
+    end
+
+    step id="s7" kind="compute"
+      op=map_get
+      input field="data" of="first"
+      input lit="name"
+      as="first_name"
+    end
+
+    step id="s8" kind="compute"
+      op=equals
+      input var="first_name"
+      input lit="Alpha"
+      as="alpha_first"
+    end
+
+    step id="s9" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="alpha_first"
+      arg name="message" lit="order_by asc should put Alpha first"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s10" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="order_test"
+      arg name="id" lit="a"
+      as="_"
+    end
+
+    step id="s11" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="order_test"
+      arg name="id" lit="b"
+      as="_"
+    end
+
+    step id="s12" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="order_test"
+      arg name="id" lit="c"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-015" kind="unit" covers="R-DOC-015"
+    // query limit restricts result count
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="limit_test"
+      arg name="id" lit="1"
+      arg name="data" lit="{\"x\": 1}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="limit_test"
+      arg name="id" lit="2"
+      arg name="data" lit="{\"x\": 2}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="limit_test"
+      arg name="id" lit="3"
+      arg name="data" lit="{\"x\": 3}"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_doc_query"
+      arg name="collection" lit="limit_test"
+      arg name="limit" lit=2
+      as="result"
+    end
+
+    step id="s5" kind="compute"
+      op=map_get
+      input var="result"
+      input lit="documents"
+      as="docs"
+    end
+
+    step id="s6" kind="compute"
+      op=list_len
+      input var="docs"
+      as="count"
+    end
+
+    step id="s7" kind="compute"
+      op=equals
+      input var="count"
+      input lit=2
+      as="limited"
+    end
+
+    step id="s8" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="limited"
+      arg name="message" lit="limit should restrict result count to 2"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s9" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="limit_test"
+      arg name="id" lit="1"
+      as="_"
+    end
+
+    step id="s10" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="limit_test"
+      arg name="id" lit="2"
+      as="_"
+    end
+
+    step id="s11" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="limit_test"
+      arg name="id" lit="3"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Count Tests
+  // ==========================================
+
+  test id="T-DOC-020" kind="unit" covers="R-DOC-020"
+    // count without filter returns total
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="count_test"
+      arg name="id" lit="c1"
+      arg name="data" lit="{\"x\": 1}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="count_test"
+      arg name="id" lit="c2"
+      arg name="data" lit="{\"x\": 2}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_count"
+      arg name="collection" lit="count_test"
+      as="total"
+    end
+
+    step id="s4" kind="compute"
+      op=equals
+      input var="total"
+      input lit=2
+      as="correct"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="correct"
+      arg name="message" lit="count should return total documents in collection"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s6" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="count_test"
+      arg name="id" lit="c1"
+      as="_"
+    end
+
+    step id="s7" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="count_test"
+      arg name="id" lit="c2"
+      as="_"
+    end
+  end
+
+  test id="T-DOC-022" kind="unit" covers="R-DOC-022"
+    // count returns 0 for empty collection
+    step id="s1" kind="call"
+      fn="storage_doc_count"
+      arg name="collection" lit="empty_collection_xyz_12345"
+      as="total"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="total"
+      input lit=0
+      as="is_zero"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_zero"
+      arg name="message" lit="count on empty collection should return 0"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Collection Isolation Test
+  // ==========================================
+
+  test id="T-DOC-044" kind="unit" covers="R-DOC-044"
+    // collections are isolated from each other
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="collection_a"
+      arg name="id" lit="doc1"
+      arg name="data" lit="{\"name\": \"DocumentA\"}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="collection_b"
+      arg name="id" lit="doc1"
+      arg name="data" lit="{\"name\": \"DocumentB\"}"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_get"
+      arg name="collection" lit="collection_a"
+      arg name="id" lit="doc1"
+      as="doc_a"
+    end
+
+    step id="s4" kind="match"
+      on="doc_a"
+
+      case variant type="Some" bindings=("d")
+        step id="s4a" kind="compute"
+          op=map_get
+          input field="data" of="d"
+          input lit="name"
+          as="name_a"
+        end
+      end
+
+      case variant type="None"
+        step id="s4b" kind="bind"
+          lit=""
+          as="name_a"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="compute"
+      op=equals
+      input var="name_a"
+      input lit="DocumentA"
+      as="isolated"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="isolated"
+      arg name="message" lit="collections should be isolated - same ID in different collections should have different data"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s7" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="collection_a"
+      arg name="id" lit="doc1"
+      as="_"
+    end
+
+    step id="s8" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="collection_b"
+      arg name="id" lit="doc1"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Edge Case: Nested JSON
+  // ==========================================
+
+  test id="T-DOC-041" kind="unit" covers="R-DOC-041"
+    // documents with nested JSON are stored correctly
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="nested_test"
+      arg name="id" lit="nested1"
+      arg name="data" lit="{\"user\": {\"name\": \"Alice\", \"address\": {\"city\": \"NYC\", \"zip\": \"10001\"}}}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_get"
+      arg name="collection" lit="nested_test"
+      arg name="id" lit="nested1"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("d")
+        step id="s3a" kind="compute"
+          op=map_get
+          input field="data" of="d"
+          input lit="user"
+          as="user"
+        end
+        step id="s3b" kind="compute"
+          op=map_get
+          input var="user"
+          input lit="address"
+          as="address"
+        end
+        step id="s3c" kind="compute"
+          op=map_get
+          input var="address"
+          input lit="city"
+          as="city"
+        end
+        step id="s3d" kind="compute"
+          op=equals
+          input var="city"
+          input lit="NYC"
+          as="nested_preserved"
+        end
+      end
+
+      case variant type="None"
+        step id="s3e" kind="bind"
+          lit=false
+          as="nested_preserved"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="nested_preserved"
+      arg name="message" lit="nested JSON should be preserved correctly"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="nested_test"
+      arg name="id" lit="nested1"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Edge Case: Array Fields
+  // ==========================================
+
+  test id="T-DOC-042" kind="unit" covers="R-DOC-042"
+    // documents with array fields are stored correctly
+    step id="s1" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="array_test"
+      arg name="id" lit="array1"
+      arg name="data" lit="{\"tags\": [\"important\", \"urgent\", \"review\"], \"scores\": [95, 87, 92]}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_doc_get"
+      arg name="collection" lit="array_test"
+      arg name="id" lit="array1"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("d")
+        step id="s3a" kind="compute"
+          op=map_get
+          input field="data" of="d"
+          input lit="tags"
+          as="tags"
+        end
+        step id="s3b" kind="compute"
+          op=list_len
+          input var="tags"
+          as="tag_count"
+        end
+        step id="s3c" kind="compute"
+          op=equals
+          input var="tag_count"
+          input lit=3
+          as="arrays_preserved"
+        end
+      end
+
+      case variant type="None"
+        step id="s3d" kind="bind"
+          lit=false
+          as="arrays_preserved"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="arrays_preserved"
+      arg name="message" lit="array fields should be preserved correctly"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="array_test"
+      arg name="id" lit="array1"
+      as="_"
+    end
+  end
+
+end
+
+end

@@ -1,0 +1,295 @@
+// std.storage Property-Based Tests
+// Property-based tests verify invariants across randomly generated inputs.
+// These tests complement unit tests by exploring edge cases automatically.
+// Test naming: T-KV-Pxxx for KV properties, T-DOC-Pxxx for doc properties
+// Test kind: property (uses random input generation)
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="std.storage.property.tests" kind="test"
+
+effects
+  effect storage
+end
+
+tests
+  // ==========================================
+  // KV Store Property Tests
+  // ==========================================
+
+  test id="T-KV-P001" kind="property" covers="R-KV-001"
+    // Property: forall key, value:
+// set(key, value); get(key) == Some(value)
+// This property verifies that any key-value pair that is set
+// can be retrieved with exactly the same value.
+    step id="s1" kind="call"
+      fn="testing_gen_string"
+      arg name="min_len" lit=0
+      arg name="max_len" lit=100
+      as="key"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_gen_string"
+      arg name="min_len" lit=0
+      arg name="max_len" lit=1000
+      as="value"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_set"
+      arg name="key" from="key"
+      arg name="value" from="value"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_kv_get"
+      arg name="key" from="key"
+      as="result"
+    end
+
+    step id="s5" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s5a" kind="compute"
+          op=equals
+          input var="v"
+          input var="value"
+          as="roundtrips"
+        end
+      end
+
+      case variant type="None"
+        step id="s5b" kind="bind"
+          lit=false
+          as="roundtrips"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="roundtrips"
+      arg name="message" lit="Property: set-get roundtrip must preserve value"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s7" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" from="key"
+      as="_"
+    end
+  end
+
+  test id="T-KV-P002" kind="property" covers="R-KV-003"
+    // Property: forall key, value:
+// set(key, value); delete(key); has(key) == false
+// This property verifies that delete always removes the key,
+// regardless of the key or value content.
+    step id="s1" kind="call"
+      fn="testing_gen_string"
+      arg name="min_len" lit=0
+      arg name="max_len" lit=100
+      as="key"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_set"
+      arg name="key" from="key"
+      arg name="value" lit="test-value"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" from="key"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_kv_has"
+      arg name="key" from="key"
+      as="exists"
+    end
+
+    step id="s5" kind="compute"
+      op=not
+      input var="exists"
+      as="deleted"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="deleted"
+      arg name="message" lit="Property: delete must remove any key"
+      as="_"
+    end
+  end
+
+  test id="T-KV-P003" kind="property" covers="R-KV-020"
+    // Property: forall key, value:
+// set(key, value); set(key, value); get(key) == Some(value)
+// This property verifies that setting the same key-value pair
+// multiple times is idempotent.
+    step id="s1" kind="call"
+      fn="testing_gen_string"
+      arg name="min_len" lit=1
+      arg name="max_len" lit=50
+      as="key"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_gen_string"
+      arg name="min_len" lit=1
+      arg name="max_len" lit=100
+      as="value"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_set"
+      arg name="key" from="key"
+      arg name="value" from="value"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_kv_set"
+      arg name="key" from="key"
+      arg name="value" from="value"
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="storage_kv_set"
+      arg name="key" from="key"
+      arg name="value" from="value"
+      as="_"
+    end
+
+    step id="s6" kind="call"
+      fn="storage_kv_get"
+      arg name="key" from="key"
+      as="result"
+    end
+
+    step id="s7" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s7a" kind="compute"
+          op=equals
+          input var="v"
+          input var="value"
+          as="same_value"
+        end
+      end
+
+      case variant type="None"
+        step id="s7b" kind="bind"
+          lit=false
+          as="same_value"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s8" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="same_value"
+      arg name="message" lit="Property: repeated set with same value must be idempotent"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s9" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" from="key"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Document Store Property Tests
+  // ==========================================
+
+  test id="T-DOC-P001" kind="property" covers="R-DOC-001"
+    // Property: forall id, data:
+// put(collection, id, data); get(collection, id).data == data
+// This property verifies that any document that is stored
+// can be retrieved with exactly the same data.
+    step id="s1" kind="call"
+      fn="testing_gen_id"
+      as="doc_id"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_gen_json"
+      arg name="max_depth" lit=3
+      arg name="max_keys" lit=5
+      as="data"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_doc_put"
+      arg name="collection" lit="property_test_collection"
+      arg name="id" from="doc_id"
+      arg name="data" from="data"
+      as="doc"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_doc_get"
+      arg name="collection" lit="property_test_collection"
+      arg name="id" from="doc_id"
+      as="result"
+    end
+
+    step id="s5" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("d")
+        step id="s5a" kind="compute"
+          op=equals
+          input field="data" of="d"
+          input var="data"
+          as="data_matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s5b" kind="bind"
+          lit=false
+          as="data_matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="data_matches"
+      arg name="message" lit="Property: document put-get roundtrip must preserve data"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s7" kind="call"
+      fn="storage_doc_delete"
+      arg name="collection" lit="property_test_collection"
+      arg name="id" from="doc_id"
+      as="_"
+    end
+  end
+
+end
+
+end

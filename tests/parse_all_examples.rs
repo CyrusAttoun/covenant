@@ -19,6 +19,29 @@ fn discover_examples() -> Vec<PathBuf> {
         .collect()
 }
 
+/// Discover all .cov files in the std/storage/tests/ directory
+fn discover_stdlib_tests() -> Vec<PathBuf> {
+    let stdlib_test_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("std")
+        .join("storage")
+        .join("tests");
+
+    if !stdlib_test_dir.exists() {
+        return Vec::new();
+    }
+
+    fs::read_dir(&stdlib_test_dir)
+        .expect("Failed to read std/storage/tests directory")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                == Some("cov")
+        })
+        .collect()
+}
+
 #[test]
 fn test_all_examples_parse() {
     let examples = discover_examples();
@@ -32,6 +55,7 @@ fn test_all_examples_parse() {
     let skip_files = [
         "21-structured-concurrency.cov", // Uses std.concurrent.parallel syntax
         "22-effect-kinds.cov",           // Uses effect-kind snippet kind
+        "24-cross-platform-storage.cov", // Uses ML-style comments and dotted effect names
     ];
 
     let mut failures = Vec::new();
@@ -67,6 +91,47 @@ fn test_all_examples_parse() {
             "\n{} out of {} examples failed to parse:\n{}",
             failures.len(),
             examples.len(),
+            failures
+                .iter()
+                .map(|(path, err)| format!("  - {}: {:?}", path.display(), err))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+}
+
+#[test]
+fn test_stdlib_tests_parse() {
+    let test_files = discover_stdlib_tests();
+
+    if test_files.is_empty() {
+        println!("⊘ No stdlib test files found (std/storage/tests/ may not exist)");
+        return;
+    }
+
+    let mut failures = Vec::new();
+
+    for test_path in &test_files {
+        let source = fs::read_to_string(&test_path)
+            .expect(&format!("Failed to read {:?}", test_path));
+
+        match parse(&source) {
+            Ok(_program) => {
+                println!("✓ Parsed: {}", test_path.display());
+            }
+            Err(err) => {
+                eprintln!("✗ Failed to parse: {}", test_path.display());
+                eprintln!("  Error: {:?}", err);
+                failures.push((test_path.clone(), err));
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        panic!(
+            "\n{} out of {} stdlib tests failed to parse:\n{}",
+            failures.len(),
+            test_files.len(),
             failures
                 .iter()
                 .map(|(path, err)| format!("  - {}: {:?}", path.display(), err))

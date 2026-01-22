@@ -1,0 +1,912 @@
+// std.storage.kv Test Suite
+// Comprehensive unit tests for the Key-Value Store module.
+// Tests cover all functions: set, get, delete, has, list, clear
+// Test naming: T-KV-XXX where XXX is the test number
+// Requirements: R-KV-XXX defined in requirements section
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="storage_kv_requirements" kind="data"
+
+requires
+  // Core CRUD Requirements
+  req id="R-KV-001"
+    text "set() stores a value that can be retrieved by get()"
+    priority critical
+  end
+
+  req id="R-KV-002"
+    text "get() returns none for non-existent keys"
+    priority critical
+  end
+
+  req id="R-KV-003"
+    text "delete() removes a key so subsequent get() returns none"
+    priority critical
+  end
+
+  req id="R-KV-004"
+    text "has() returns true for existing keys, false otherwise"
+    priority high
+  end
+
+  req id="R-KV-005"
+    text "list() returns all keys matching the given prefix"
+    priority high
+  end
+
+  req id="R-KV-006"
+    text "clear() removes all keys matching prefix, or all keys if no prefix"
+    priority high
+  end
+
+  // Edge Case Requirements
+  req id="R-KV-010"
+    text "Empty string is a valid key"
+    priority medium
+  end
+
+  req id="R-KV-011"
+    text "Empty string is a valid value"
+    priority medium
+  end
+
+  req id="R-KV-012"
+    text "Keys with special characters (colons, slashes) are handled correctly"
+    priority medium
+  end
+
+  req id="R-KV-013"
+    text "Unicode keys and values are preserved correctly"
+    priority medium
+  end
+
+  req id="R-KV-014"
+    text "delete() on non-existent key is a no-op (no error)"
+    priority medium
+  end
+
+  req id="R-KV-015"
+    text "list() with empty prefix returns all keys"
+    priority medium
+  end
+
+  req id="R-KV-016"
+    text "list() with no matches returns empty array"
+    priority medium
+  end
+
+  // Idempotency Requirements
+  req id="R-KV-020"
+    text "set() is idempotent - setting same key-value twice has same result"
+    priority high
+  end
+
+  req id="R-KV-021"
+    text "delete() is idempotent - deleting twice is safe"
+    priority high
+  end
+
+  // Data Integrity
+  req id="R-KV-031"
+    text "set() overwrites existing value for same key"
+    priority critical
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="storage_kv_tests" kind="test"
+
+effects
+  effect storage
+end
+
+tests
+  // ==========================================
+  // Basic CRUD Tests
+  // ==========================================
+
+  test id="T-KV-001" kind="unit" covers="R-KV-001"
+    // set then get returns same value
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="test-key-001"
+      arg name="value" lit="test-value-001"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="test-key-001"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="test-value-001"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="get should return the value that was set"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="test-key-001"
+      as="_"
+    end
+  end
+
+  test id="T-KV-002" kind="unit" covers="R-KV-002"
+    // get returns none for missing key
+    step id="s1" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="nonexistent-key-xyz-12345"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="None"
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_none"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_none"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_none"
+      arg name="message" lit="get should return none for non-existent key"
+      as="_"
+    end
+  end
+
+  test id="T-KV-003" kind="unit" covers="R-KV-003"
+    // delete removes key
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="delete-test-key"
+      arg name="value" lit="to-be-deleted"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="delete-test-key"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="delete-test-key"
+      as="result"
+    end
+
+    step id="s4" kind="match"
+      on="result"
+
+      case variant type="None"
+        step id="s4a" kind="bind"
+          lit=true
+          as="is_deleted"
+        end
+      end
+
+      case wildcard
+        step id="s4b" kind="bind"
+          lit=false
+          as="is_deleted"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_deleted"
+      arg name="message" lit="key should be deleted after delete()"
+      as="_"
+    end
+  end
+
+  test id="T-KV-004" kind="unit" covers="R-KV-004"
+    // has returns true for existing, false for missing
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="has-test-key"
+      arg name="value" lit="exists"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_has"
+      arg name="key" lit="has-test-key"
+      as="exists"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="exists"
+      arg name="message" lit="has should return true for existing key"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_kv_has"
+      arg name="key" lit="definitely-not-existing-key-999"
+      as="not_exists"
+    end
+
+    step id="s5" kind="compute"
+      op=not
+      input var="not_exists"
+      as="is_false"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_false"
+      arg name="message" lit="has should return false for missing key"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s7" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="has-test-key"
+      as="_"
+    end
+  end
+
+  test id="T-KV-005" kind="unit" covers="R-KV-005"
+    // list returns keys matching prefix
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="list-test:a"
+      arg name="value" lit="1"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="list-test:b"
+      arg name="value" lit="2"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="other-prefix:c"
+      arg name="value" lit="3"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_kv_list"
+      arg name="prefix" lit="list-test:"
+      as="keys"
+    end
+
+    step id="s5" kind="compute"
+      op=list_len
+      input var="keys"
+      as="key_count"
+    end
+
+    step id="s6" kind="compute"
+      op=equals
+      input var="key_count"
+      input lit=2
+      as="has_two"
+    end
+
+    step id="s7" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_two"
+      arg name="message" lit="list should return 2 keys with prefix 'list-test:'"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s8" kind="call"
+      fn="storage_kv_clear"
+      arg name="prefix" lit="list-test:"
+      as="_"
+    end
+
+    step id="s9" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="other-prefix:c"
+      as="_"
+    end
+  end
+
+  test id="T-KV-006" kind="unit" covers="R-KV-006"
+    // clear removes keys by prefix
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="clear-test:a"
+      arg name="value" lit="1"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="clear-test:b"
+      arg name="value" lit="2"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="keep-this:c"
+      arg name="value" lit="3"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_kv_clear"
+      arg name="prefix" lit="clear-test:"
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="storage_kv_has"
+      arg name="key" lit="clear-test:a"
+      as="a_exists"
+    end
+
+    step id="s6" kind="call"
+      fn="storage_kv_has"
+      arg name="key" lit="keep-this:c"
+      as="c_exists"
+    end
+
+    step id="s7" kind="compute"
+      op=not
+      input var="a_exists"
+      as="a_cleared"
+    end
+
+    step id="s8" kind="compute"
+      op=and
+      input var="a_cleared"
+      input var="c_exists"
+      as="correct"
+    end
+
+    step id="s9" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="correct"
+      arg name="message" lit="clear should remove prefixed keys but preserve others"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s10" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="keep-this:c"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Edge Case Tests
+  // ==========================================
+
+  test id="T-KV-010" kind="unit" covers="R-KV-010"
+    // empty string key is valid
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit=""
+      arg name="value" lit="empty-key-value"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit=""
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="empty-key-value"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="empty string should be a valid key"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit=""
+      as="_"
+    end
+  end
+
+  test id="T-KV-011" kind="unit" covers="R-KV-011"
+    // empty string value is valid
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="empty-value-test"
+      arg name="value" lit=""
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="empty-value-test"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit=""
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="empty string should be a valid value"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="empty-value-test"
+      as="_"
+    end
+  end
+
+  test id="T-KV-012" kind="unit" covers="R-KV-012"
+    // special characters in key are handled
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="special:key/with\\chars!@#$%"
+      arg name="value" lit="special-value"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="special:key/with\\chars!@#$%"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="special-value"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="special characters in key should be handled"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="special:key/with\\chars!@#$%"
+      as="_"
+    end
+  end
+
+  test id="T-KV-013" kind="unit" covers="R-KV-013"
+    // unicode key and value are preserved
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="unicode-key-\u{1F600}-\u{4E2D}\u{6587}"
+      arg name="value" lit="Unicode value: \u{65E5}\u{672C}\u{8A9E} \u{1F389}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="unicode-key-\u{1F600}-\u{4E2D}\u{6587}"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="Unicode value: \u{65E5}\u{672C}\u{8A9E} \u{1F389}"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="unicode keys and values should be preserved"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="unicode-key-\u{1F600}-\u{4E2D}\u{6587}"
+      as="_"
+    end
+  end
+
+  test id="T-KV-014" kind="unit" covers="R-KV-014"
+    // delete non-existent key is a no-op
+    step id="s1" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="never-existed-xyz-98765"
+      as="_"
+    end
+
+    // If we reach here without error, test passes
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="delete on non-existent key should not error"
+      as="_"
+    end
+  end
+
+  test id="T-KV-015" kind="unit" covers="R-KV-015"
+    // list with empty prefix returns all keys
+    // First clear all to have a known state
+    step id="s1" kind="call"
+      fn="storage_kv_clear"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="all-keys-test-a"
+      arg name="value" lit="1"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="all-keys-test-b"
+      arg name="value" lit="2"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="different-prefix-c"
+      arg name="value" lit="3"
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="storage_kv_list"
+      arg name="prefix" lit=""
+      as="all_keys"
+    end
+
+    step id="s6" kind="compute"
+      op=list_len
+      input var="all_keys"
+      as="count"
+    end
+
+    step id="s7" kind="compute"
+      op=greater_eq
+      input var="count"
+      input lit=3
+      as="has_all"
+    end
+
+    step id="s8" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_all"
+      arg name="message" lit="list with empty prefix should return all keys"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s9" kind="call"
+      fn="storage_kv_clear"
+      as="_"
+    end
+  end
+
+  test id="T-KV-016" kind="unit" covers="R-KV-016"
+    // list with no matches returns empty array
+    step id="s1" kind="call"
+      fn="storage_kv_list"
+      arg name="prefix" lit="nonexistent-prefix-abc-xyz-12345:"
+      as="keys"
+    end
+
+    step id="s2" kind="compute"
+      op=list_len
+      input var="keys"
+      as="count"
+    end
+
+    step id="s3" kind="compute"
+      op=equals
+      input var="count"
+      input lit=0
+      as="is_empty"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_empty"
+      arg name="message" lit="list with no matches should return empty array"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Idempotency Tests
+  // ==========================================
+
+  test id="T-KV-020" kind="unit" covers="R-KV-020"
+    // set is idempotent
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="idempotent-test-key"
+      arg name="value" lit="same-value"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="idempotent-test-key"
+      arg name="value" lit="same-value"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="idempotent-test-key"
+      as="result"
+    end
+
+    step id="s4" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s4a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="same-value"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s4b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="repeated set with same value should be idempotent"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s6" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="idempotent-test-key"
+      as="_"
+    end
+  end
+
+  test id="T-KV-021" kind="unit" covers="R-KV-021"
+    // delete is idempotent
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="delete-twice-key"
+      arg name="value" lit="value"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="delete-twice-key"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="delete-twice-key"
+      as="_"
+    end
+
+    // If we reach here without error, test passes
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="delete twice should not error"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Data Integrity Tests
+  // ==========================================
+
+  test id="T-KV-031" kind="unit" covers="R-KV-031"
+    // set overwrites existing value
+    step id="s1" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="overwrite-test-key"
+      arg name="value" lit="original-value"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="storage_kv_set"
+      arg name="key" lit="overwrite-test-key"
+      arg name="value" lit="updated-value"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="storage_kv_get"
+      arg name="key" lit="overwrite-test-key"
+      as="result"
+    end
+
+    step id="s4" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s4a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="updated-value"
+          as="is_updated"
+        end
+      end
+
+      case variant type="None"
+        step id="s4b" kind="bind"
+          lit=false
+          as="is_updated"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_updated"
+      arg name="message" lit="set should overwrite existing value"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s6" kind="call"
+      fn="storage_kv_delete"
+      arg name="key" lit="overwrite-test-key"
+      as="_"
+    end
+  end
+
+end
+
+end
