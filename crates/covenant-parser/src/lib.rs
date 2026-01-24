@@ -25,6 +25,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use covenant_ast::Section;
 
     #[test]
     fn test_parse_hello_world() {
@@ -1886,5 +1887,129 @@ end
 "#;
         let result = parse(source);
         assert!(result.is_ok(), "Test section with steps should parse: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_dotted_effect_name() {
+        let source = r#"
+snippet id="storage.save" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="save"
+    param name="key" type="String"
+    param name="value" type="String"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="std.storage.kv.set"
+    arg name="key" from="key"
+    arg name="value" from="value"
+    as="_"
+  end
+end
+
+end
+"#;
+        let result = parse(source);
+        assert!(result.is_ok(), "Failed to parse dotted effect name: {:?}", result.err());
+        let program = result.unwrap();
+        if let Program::Snippets { snippets, .. } = program {
+            let snippet = &snippets[0];
+            let effects_section = snippet.sections.iter().find_map(|s| {
+                if let Section::Effects(e) = s { Some(e) } else { None }
+            }).expect("effects section not found");
+            assert_eq!(effects_section.effects.len(), 1);
+            assert_eq!(effects_section.effects[0].name, "std.storage");
+        } else {
+            panic!("Expected Snippets program");
+        }
+    }
+
+    #[test]
+    fn test_parse_multi_level_dotted_effect() {
+        let source = r#"
+snippet id="db.reader" kind="fn"
+
+effects
+  effect database.postgres.read
+end
+
+signature
+  fn name="read_users"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="return"
+    lit="placeholder"
+    as="_"
+  end
+end
+
+end
+"#;
+        let result = parse(source);
+        assert!(result.is_ok(), "Failed to parse multi-level dotted effect: {:?}", result.err());
+        let program = result.unwrap();
+        if let Program::Snippets { snippets, .. } = program {
+            let snippet = &snippets[0];
+            let effects_section = snippet.sections.iter().find_map(|s| {
+                if let Section::Effects(e) = s { Some(e) } else { None }
+            }).expect("effects section not found");
+            assert_eq!(effects_section.effects[0].name, "database.postgres.read");
+        } else {
+            panic!("Expected Snippets program");
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_dotted_effects() {
+        let source = r#"
+snippet id="api.handler" kind="fn"
+
+effects
+  effect network.http
+  effect database.read
+  effect console
+end
+
+signature
+  fn name="handle"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="return"
+    lit="done"
+    as="_"
+  end
+end
+
+end
+"#;
+        let result = parse(source);
+        assert!(result.is_ok(), "Failed to parse multiple dotted effects: {:?}", result.err());
+        let program = result.unwrap();
+        if let Program::Snippets { snippets, .. } = program {
+            let snippet = &snippets[0];
+            let effects_section = snippet.sections.iter().find_map(|s| {
+                if let Section::Effects(e) = s { Some(e) } else { None }
+            }).expect("effects section not found");
+            assert_eq!(effects_section.effects.len(), 3);
+            assert_eq!(effects_section.effects[0].name, "network.http");
+            assert_eq!(effects_section.effects[1].name, "database.read");
+            assert_eq!(effects_section.effects[2].name, "console");
+        } else {
+            panic!("Expected Snippets program");
+        }
     }
 }

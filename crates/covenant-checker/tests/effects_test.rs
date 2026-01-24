@@ -1153,3 +1153,174 @@ end
     // Should be valid with database effect declared
     assert!(result.violations.is_empty(), "Query with database effect should be valid");
 }
+
+// ==========================================================================
+// DOTTED EFFECT NAMES - Namespaced effects are independent strings
+// ==========================================================================
+
+#[test]
+fn dotted_effect_names_propagate_correctly() {
+    // Dotted effect names like "std.storage" work as regular string effects
+    let source = r#"
+snippet id="std.storage.kv.set" kind="extern"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="set"
+    param name="key" type="String"
+    param name="value" type="String"
+    returns type="Unit"
+  end
+end
+
+end
+
+snippet id="app.save_config" kind="fn"
+
+effects
+  effect std.storage
+end
+
+signature
+  fn name="save_config"
+    param name="value" type="String"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="std.storage.kv.set"
+    arg name="key" lit="config"
+    arg name="value" from="value"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(), "Matching dotted effects should be valid");
+
+    let closure = result.closures.get("app.save_config").expect("closure not found");
+    assert!(closure.declared.contains("std.storage"));
+    assert!(closure.computed.contains("std.storage"));
+}
+
+#[test]
+fn dotted_effects_are_independent_strings() {
+    // "database" and "database.read" are completely independent effects.
+    // Declaring "database" does NOT cover "database.read"
+    let source = r#"
+snippet id="db.reader" kind="extern"
+
+effects
+  effect database.read
+end
+
+signature
+  fn name="read"
+    param name="query" type="String"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.fetch" kind="fn"
+
+effects
+  effect database
+end
+
+signature
+  fn name="fetch"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="db.reader"
+    arg name="query" lit="SELECT 1"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    // "database" does NOT subsume "database.read" — they are independent
+    assert_eq!(result.violations.len(), 1, "Expected violation: database != database.read");
+
+    match &result.violations[0] {
+        EffectError::MissingEffect { function, missing, .. } => {
+            assert_eq!(function, "app.fetch");
+            assert!(missing.contains(&"database.read".to_string()));
+        }
+        _ => panic!("Expected MissingEffect error"),
+    }
+}
+
+#[test]
+fn multi_level_dotted_effects_work() {
+    // Effects like "network.http.get" work as independent strings
+    let source = r#"
+snippet id="http.get" kind="extern"
+
+effects
+  effect network.http.get
+end
+
+signature
+  fn name="get"
+    param name="url" type="String"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="api.fetch_users" kind="fn"
+
+effects
+  effect network.http.get
+end
+
+signature
+  fn name="fetch_users"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="http.get"
+    arg name="url" lit="https://api.example.com/users"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(), "Multi-level dotted effect should work");
+
+    let closure = result.closures.get("api.fetch_users").expect("closure not found");
+    assert!(closure.declared.contains("network.http.get"));
+    assert!(closure.computed.contains("network.http.get"));
+}

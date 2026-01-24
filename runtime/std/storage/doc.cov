@@ -57,13 +57,6 @@ signature
   end
 end
 
-platforms
-  platform="deno"
-  platform="browser"
-  platform="node"
-  platform="wasi"
-end
-
 metadata
   description="Insert or update a document. Returns the stored document with timestamps."
   cost_hint=cheap
@@ -88,13 +81,6 @@ signature
   end
 end
 
-platforms
-  platform="deno"
-  platform="browser"
-  platform="node"
-  platform="wasi"
-end
-
 metadata
   description="Retrieve a document by ID, returns none if not found"
   cost_hint=cheap
@@ -115,13 +101,6 @@ signature
     param name="id" type="String"
     returns type="Bool"
   end
-end
-
-platforms
-  platform="deno"
-  platform="browser"
-  platform="node"
-  platform="wasi"
 end
 
 metadata
@@ -150,13 +129,6 @@ signature
   end
 end
 
-platforms
-  platform="deno"
-  platform="browser"
-  platform="node"
-  platform="wasi"
-end
-
 metadata
   description="Query documents with JSON filter. See filter syntax in documentation."
   cost_hint=moderate
@@ -179,13 +151,6 @@ signature
   end
 end
 
-platforms
-  platform="deno"
-  platform="browser"
-  platform="node"
-  platform="wasi"
-end
-
 metadata
   description="Count documents matching filter (or all documents if no filter)"
   cost_hint=moderate
@@ -206,13 +171,6 @@ signature
     param name="field" type="String"
     returns type="Unit"
   end
-end
-
-platforms
-  platform="deno"
-  platform="browser"
-  platform="node"
-  platform="wasi"
 end
 
 metadata

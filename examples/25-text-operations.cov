@@ -1,0 +1,115 @@
+// Text Operations - string manipulation via host calls
+//
+// This example demonstrates:
+// - String operations (upper, lower, trim, concat, contains, etc.)
+// - All compile to host calls via covenant_text WASM imports
+// - No effect needed (pure computation)
+
+snippet id="main.text_ops" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="main"
+    returns type="Unit"
+  end
+end
+
+body
+  // upper
+  step id="s1" kind="compute"
+    op=upper
+    input lit="hello world"
+    as="upper_result"
+  end
+  step id="s1p" kind="call"
+    fn="console.println"
+    arg name="message" from="upper_result"
+    as="_"
+  end
+
+  // lower
+  step id="s2" kind="compute"
+    op=lower
+    input lit="HELLO WORLD"
+    as="lower_result"
+  end
+  step id="s2p" kind="call"
+    fn="console.println"
+    arg name="message" from="lower_result"
+    as="_"
+  end
+
+  // concat
+  step id="s3" kind="compute"
+    op=concat
+    input lit="foo"
+    input lit="bar"
+    as="concat_result"
+  end
+  step id="s3p" kind="call"
+    fn="console.println"
+    arg name="message" from="concat_result"
+    as="_"
+  end
+
+  // trim
+  step id="s4" kind="compute"
+    op=trim
+    input lit="  padded  "
+    as="trim_result"
+  end
+  step id="s4p" kind="call"
+    fn="console.println"
+    arg name="message" from="trim_result"
+    as="_"
+  end
+
+  // contains
+  step id="s5" kind="compute"
+    op=contains
+    input lit="hello world"
+    input lit="world"
+    as="has_world"
+  end
+
+  // starts_with
+  step id="s6" kind="compute"
+    op=starts_with
+    input lit="hello world"
+    input lit="hello"
+    as="starts_hello"
+  end
+
+  // replace
+  step id="s7" kind="compute"
+    op=replace
+    input lit="hello world"
+    input lit="world"
+    input lit="covenant"
+    as="replaced"
+  end
+  step id="s7p" kind="call"
+    fn="console.println"
+    arg name="message" from="replaced"
+    as="_"
+  end
+
+  // repeat
+  step id="s8" kind="compute"
+    op=repeat
+    input lit="ab"
+    input lit=3
+    as="repeated"
+  end
+  step id="s8p" kind="call"
+    fn="console.println"
+    arg name="message" from="repeated"
+    as="_"
+  end
+
+end
+
+end

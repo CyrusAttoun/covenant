@@ -2063,8 +2063,6 @@ impl<'a> Parser<'a> {
                 let text = &self.source[token.span.start..token.span.end];
                 text == expected_name
             }
-            // Handle attribute names that are also keywords
-            TokenKind::Platform => expected_name == "platform",
             _ => false,
         };
 
@@ -2140,7 +2138,6 @@ impl<'a> Parser<'a> {
             TokenKind::Content => Ok(Section::Content(self.parse_content_section()?)),
             TokenKind::Schema => Ok(Section::Schema(self.parse_schema_section()?)),
             TokenKind::Types => Ok(Section::Types(self.parse_types_section()?)),
-            TokenKind::Platforms => Ok(Section::Platforms(self.parse_platforms_section()?)),
             _ => Err(ParseError::UnexpectedSection {
                 section: self.peek().describe().to_string(),
                 span: self.span(),
@@ -3847,7 +3844,7 @@ impl<'a> Parser<'a> {
         let start = self.span();
         self.consume(TokenKind::Effect)?;
         // Effect name can be a keyword like "database" or an identifier
-        let name = match self.peek() {
+        let mut name = match self.peek() {
             TokenKind::Database => { self.advance(); "database".to_string() }
             TokenKind::Query => { self.advance(); "query".to_string() }
             TokenKind::Ident => self.consume_text(TokenKind::Ident)?,
@@ -3859,42 +3856,18 @@ impl<'a> Parser<'a> {
                 ));
             }
         };
+        // Handle dotted names: effect std.storage, effect database.read
+        while self.at(TokenKind::Dot) {
+            self.advance(); // consume '.'
+            let segment = self.consume_text(TokenKind::Ident)?;
+            name.push('.');
+            name.push_str(&segment);
+        }
         let end = self.span();
 
         Ok(EffectDecl {
             name,
             params: Vec::new(),
-            span: start.merge(end),
-        })
-    }
-
-    fn parse_platforms_section(&mut self) -> Result<PlatformsSection, ParseError> {
-        let start = self.span();
-        self.consume(TokenKind::Platforms)?; // "platforms" section keyword
-
-        let mut platforms = Vec::new();
-        while self.at(TokenKind::Platform) {
-            platforms.push(self.parse_platform_decl()?);
-        }
-
-        self.consume(TokenKind::End)?;
-        let end = self.span();
-
-        Ok(PlatformsSection {
-            platforms,
-            span: start.merge(end),
-        })
-    }
-
-    fn parse_platform_decl(&mut self) -> Result<PlatformDecl, ParseError> {
-        let start = self.span();
-        self.consume(TokenKind::Platform)?;
-        self.consume(TokenKind::Eq)?;
-        let name = self.consume_string_literal()?;
-        let end = self.span();
-
-        Ok(PlatformDecl {
-            name,
             span: start.merge(end),
         })
     }

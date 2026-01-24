@@ -49,12 +49,6 @@ pub enum CheckError {
     #[error("unknown field '{field}' in type '{type_name}'")]
     UnknownField { field: String, type_name: String },
 
-    #[error("missing platform implementation: extern-abstract '{abstract_id}' declares platform '{platform}' but no extern-impl exists")]
-    MissingPlatformImpl {
-        abstract_id: String,
-        platform: String,
-    },
-
     #[error("extern-impl '{impl_id}' references unknown extern-abstract '{abstract_id}'")]
     UnknownExternAbstract {
         impl_id: String,

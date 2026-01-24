@@ -201,6 +201,49 @@ struct RuntimeFunctions {
     mem_alloc: Option<u32>,
     /// WASI fd_write for filesystem
     wasi_fd_write: Option<u32>,
+
+    // --- Text/String operations (covenant_text module) ---
+    // Unary -> String: (ptr, len) -> i64 fat pointer
+    text_upper: Option<u32>,
+    text_lower: Option<u32>,
+    text_trim: Option<u32>,
+    text_trim_start: Option<u32>,
+    text_trim_end: Option<u32>,
+    text_str_reverse: Option<u32>,
+    // Unary -> Int: (ptr, len) -> i64
+    text_str_len: Option<u32>,
+    text_byte_len: Option<u32>,
+    text_is_empty: Option<u32>,
+    // Binary -> String: (ptr1, len1, ptr2, len2) -> i64 fat pointer
+    text_concat: Option<u32>,
+    // Binary -> Bool: (ptr1, len1, ptr2, len2) -> i64 (0/1)
+    text_contains: Option<u32>,
+    text_starts_with: Option<u32>,
+    text_ends_with: Option<u32>,
+    // Binary -> Int: (ptr1, len1, ptr2, len2) -> i64
+    text_index_of: Option<u32>,
+    // Slice: (ptr, len, start, end) -> i64 fat pointer
+    text_slice: Option<u32>,
+    // CharAt: (ptr, len, idx) -> i64 fat pointer
+    text_char_at: Option<u32>,
+    // Replace: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> i64 fat pointer
+    text_replace: Option<u32>,
+    // Split: (ptr, len, delim_ptr, delim_len) -> i64 fat pointer (serialized array)
+    text_split: Option<u32>,
+    // Join: (arr_ptr, arr_len, sep_ptr, sep_len) -> i64 fat pointer
+    text_join: Option<u32>,
+    // Repeat: (ptr, len, count) -> i64 fat pointer
+    text_repeat: Option<u32>,
+    // Pad: (ptr, len, target_len, fill_ptr, fill_len) -> i64 fat pointer
+    text_pad_start: Option<u32>,
+    text_pad_end: Option<u32>,
+
+    // --- Regex operations (covenant_text module) ---
+    text_regex_test: Option<u32>,
+    text_regex_match: Option<u32>,
+    text_regex_replace: Option<u32>,
+    text_regex_replace_all: Option<u32>,
+    text_regex_split: Option<u32>,
 }
 
 impl<'a> SnippetWasmCompiler<'a> {
@@ -235,6 +278,12 @@ impl<'a> SnippetWasmCompiler<'a> {
         // First pass: collect all effects and register imports
         let all_effects = collect_all_effects(&functions);
         self.register_effect_imports(&all_effects);
+
+        // Register text imports if any snippet uses string operations
+        let has_string_ops = functions.iter().any(|s| snippet_has_string_ops(s));
+        if has_string_ops {
+            self.register_text_imports();
+        }
 
         // Pre-scan for string literals to determine if we need memory
         let has_strings = functions.iter().any(|s| snippet_has_string_literals(s));
@@ -418,6 +467,181 @@ impl<'a> SnippetWasmCompiler<'a> {
         }
     }
 
+    /// Register imports for text/string operations (effectless — triggered by AST scan)
+    fn register_text_imports(&mut self) {
+        // Ensure memory allocator is available (needed for host to write results)
+        if self.runtime.mem_alloc.is_none() {
+            self.runtime.mem_alloc = Some(self.imports.add_import(
+                "covenant_mem",
+                "alloc",
+                vec![ValType::I32],
+                vec![ValType::I32],
+            ));
+        }
+
+        // Unary -> String: (ptr, len) -> i64 fat pointer
+        self.runtime.text_upper = Some(self.imports.add_import(
+            "covenant_text", "upper",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_lower = Some(self.imports.add_import(
+            "covenant_text", "lower",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_trim = Some(self.imports.add_import(
+            "covenant_text", "trim",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_trim_start = Some(self.imports.add_import(
+            "covenant_text", "trim_start",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_trim_end = Some(self.imports.add_import(
+            "covenant_text", "trim_end",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_str_reverse = Some(self.imports.add_import(
+            "covenant_text", "str_reverse",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Unary -> Int: (ptr, len) -> i64
+        self.runtime.text_str_len = Some(self.imports.add_import(
+            "covenant_text", "str_len",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_byte_len = Some(self.imports.add_import(
+            "covenant_text", "byte_len",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_is_empty = Some(self.imports.add_import(
+            "covenant_text", "is_empty",
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Binary -> String: (ptr1, len1, ptr2, len2) -> i64 fat pointer
+        self.runtime.text_concat = Some(self.imports.add_import(
+            "covenant_text", "concat",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Binary -> Bool (as i64): (ptr1, len1, ptr2, len2) -> i64
+        self.runtime.text_contains = Some(self.imports.add_import(
+            "covenant_text", "contains",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_starts_with = Some(self.imports.add_import(
+            "covenant_text", "starts_with",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_ends_with = Some(self.imports.add_import(
+            "covenant_text", "ends_with",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Binary -> Int: (ptr1, len1, ptr2, len2) -> i64
+        self.runtime.text_index_of = Some(self.imports.add_import(
+            "covenant_text", "index_of",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Slice: (ptr, len, start, end) -> i64 fat pointer
+        self.runtime.text_slice = Some(self.imports.add_import(
+            "covenant_text", "slice",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // CharAt: (ptr, len, idx) -> i64 fat pointer
+        self.runtime.text_char_at = Some(self.imports.add_import(
+            "covenant_text", "char_at",
+            vec![ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Replace: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> i64 fat pointer
+        self.runtime.text_replace = Some(self.imports.add_import(
+            "covenant_text", "replace",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Split: (ptr, len, delim_ptr, delim_len) -> i64 fat pointer
+        self.runtime.text_split = Some(self.imports.add_import(
+            "covenant_text", "split",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Join: (arr_ptr, arr_len, sep_ptr, sep_len) -> i64 fat pointer
+        self.runtime.text_join = Some(self.imports.add_import(
+            "covenant_text", "join",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Repeat: (ptr, len, count) -> i64 fat pointer
+        self.runtime.text_repeat = Some(self.imports.add_import(
+            "covenant_text", "repeat",
+            vec![ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Pad: (ptr, len, target_len, fill_ptr, fill_len) -> i64 fat pointer
+        self.runtime.text_pad_start = Some(self.imports.add_import(
+            "covenant_text", "pad_start",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_pad_end = Some(self.imports.add_import(
+            "covenant_text", "pad_end",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+
+        // Regex: (pat_ptr, pat_len, in_ptr, in_len) -> i64 (bool or fat pointer)
+        self.runtime.text_regex_test = Some(self.imports.add_import(
+            "covenant_text", "regex_test",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_regex_match = Some(self.imports.add_import(
+            "covenant_text", "regex_match",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        // Regex replace: (pat_ptr, pat_len, in_ptr, in_len, rep_ptr, rep_len) -> i64
+        self.runtime.text_regex_replace = Some(self.imports.add_import(
+            "covenant_text", "regex_replace",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_regex_replace_all = Some(self.imports.add_import(
+            "covenant_text", "regex_replace_all",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+        self.runtime.text_regex_split = Some(self.imports.add_import(
+            "covenant_text", "regex_split",
+            vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            vec![ValType::I64],
+        ));
+    }
+
     /// Compile a single function snippet
     fn compile_function_snippet(&mut self, snippet: &Snippet) -> Result<Function, CodegenError> {
         let sig = find_function_signature(snippet)
@@ -469,12 +693,18 @@ impl<'a> SnippetWasmCompiler<'a> {
     /// Count the number of step bindings that need locals
     fn count_step_bindings(&self, steps: &[Step]) -> u32 {
         let mut count = 0;
+        let mut needs_text_locals = false;
         for step in steps {
             if step.output_binding != "_" {
                 count += 1;
             }
             // Count nested steps and special cases
             match &step.kind {
+                StepKind::Compute(compute) => {
+                    if is_string_operation(&compute.op) {
+                        needs_text_locals = true;
+                    }
+                }
                 StepKind::If(if_step) => {
                     count += self.count_step_bindings(&if_step.then_steps);
                     if let Some(else_steps) = &if_step.else_steps {
@@ -500,9 +730,20 @@ impl<'a> SnippetWasmCompiler<'a> {
                     if call.fn_name.starts_with("console.") {
                         count += 1;
                     }
+                    // Regex calls need 2 temp locals per argument (ptr unpack)
+                    if call.fn_name.starts_with("std.text.regex_") {
+                        count += call.args.len() as u32;
+                    }
                 }
                 _ => {}
             }
+        }
+        // Text operation temp locals (allocated by name, so max across all ops):
+        // __text_unary, __text_bin_a, __text_bin_b, __text_slice_str/start/end,
+        // __text_char_str/idx, __text_rep_str/from/to, __text_repeat_str/n,
+        // __text_pad_str/tlen/fill = 15 unique names max
+        if needs_text_locals {
+            count += 15;
         }
         count
     }
@@ -756,6 +997,236 @@ impl<'a> SnippetWasmCompiler<'a> {
         Ok(())
     }
 
+    // ===== Text Operation Compilation Helpers =====
+
+    /// Compile a unary text operation: one i64 fat pointer on stack -> host call -> i64 result
+    /// Stack before: [fat_ptr]
+    /// Stack after: [result_i64]
+    fn compile_unary_text_op(&mut self, func: &mut Function, import_idx: Option<u32>) -> Result<(), CodegenError> {
+        let idx = import_idx.ok_or(CodegenError::UnsupportedExpression)?;
+        let temp = self.allocate_local("__text_unary");
+
+        // Store fat pointer
+        func.instruction(&Instruction::LocalSet(temp));
+
+        // Unpack: ptr = fat_ptr >> 32
+        func.instruction(&Instruction::LocalGet(temp));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Unpack: len = fat_ptr & 0xFFFFFFFF
+        func.instruction(&Instruction::LocalGet(temp));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Call host function
+        func.instruction(&Instruction::Call(idx));
+        Ok(())
+    }
+
+    /// Compile a binary text operation: two i64 fat pointers on stack -> host call -> i64 result
+    /// Stack before: [fat_ptr_a, fat_ptr_b] (b on top)
+    /// Stack after: [result_i64]
+    fn compile_binary_text_op(&mut self, func: &mut Function, import_idx: Option<u32>) -> Result<(), CodegenError> {
+        let idx = import_idx.ok_or(CodegenError::UnsupportedExpression)?;
+        let temp_b = self.allocate_local("__text_bin_b");
+        let temp_a = self.allocate_local("__text_bin_a");
+
+        // Pop b then a
+        func.instruction(&Instruction::LocalSet(temp_b));
+        func.instruction(&Instruction::LocalSet(temp_a));
+
+        // Unpack a: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_a));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_a));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Unpack b: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_b));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_b));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Call host function
+        func.instruction(&Instruction::Call(idx));
+        Ok(())
+    }
+
+    /// Compile slice(string, start, end): string fat ptr + two int args
+    /// Stack before: [str_fat_ptr, start_i64, end_i64] (end on top)
+    fn compile_slice_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
+        let idx = self.runtime.text_slice.ok_or(CodegenError::UnsupportedExpression)?;
+        let temp_end = self.allocate_local("__text_slice_end");
+        let temp_start = self.allocate_local("__text_slice_start");
+        let temp_str = self.allocate_local("__text_slice_str");
+
+        func.instruction(&Instruction::LocalSet(temp_end));
+        func.instruction(&Instruction::LocalSet(temp_start));
+        func.instruction(&Instruction::LocalSet(temp_str));
+
+        // Unpack string: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Start index as i32
+        func.instruction(&Instruction::LocalGet(temp_start));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // End index as i32
+        func.instruction(&Instruction::LocalGet(temp_end));
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::Call(idx));
+        Ok(())
+    }
+
+    /// Compile char_at(string, index): string fat ptr + int arg
+    /// Stack before: [str_fat_ptr, idx_i64] (idx on top)
+    fn compile_char_at_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
+        let idx = self.runtime.text_char_at.ok_or(CodegenError::UnsupportedExpression)?;
+        let temp_idx = self.allocate_local("__text_char_idx");
+        let temp_str = self.allocate_local("__text_char_str");
+
+        func.instruction(&Instruction::LocalSet(temp_idx));
+        func.instruction(&Instruction::LocalSet(temp_str));
+
+        // Unpack string: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Index as i32
+        func.instruction(&Instruction::LocalGet(temp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::Call(idx));
+        Ok(())
+    }
+
+    /// Compile replace(string, from, to): three fat pointers
+    /// Stack before: [str_fat_ptr, from_fat_ptr, to_fat_ptr] (to on top)
+    fn compile_replace_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
+        let idx = self.runtime.text_replace.ok_or(CodegenError::UnsupportedExpression)?;
+        let temp_to = self.allocate_local("__text_rep_to");
+        let temp_from = self.allocate_local("__text_rep_from");
+        let temp_str = self.allocate_local("__text_rep_str");
+
+        func.instruction(&Instruction::LocalSet(temp_to));
+        func.instruction(&Instruction::LocalSet(temp_from));
+        func.instruction(&Instruction::LocalSet(temp_str));
+
+        // Unpack string: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Unpack from: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_from));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_from));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Unpack to: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_to));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_to));
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::Call(idx));
+        Ok(())
+    }
+
+    /// Compile repeat(string, count): string fat ptr + int arg
+    /// Stack before: [str_fat_ptr, count_i64] (count on top)
+    fn compile_repeat_op(&mut self, func: &mut Function) -> Result<(), CodegenError> {
+        let idx = self.runtime.text_repeat.ok_or(CodegenError::UnsupportedExpression)?;
+        let temp_count = self.allocate_local("__text_repeat_n");
+        let temp_str = self.allocate_local("__text_repeat_str");
+
+        func.instruction(&Instruction::LocalSet(temp_count));
+        func.instruction(&Instruction::LocalSet(temp_str));
+
+        // Unpack string: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Count as i32
+        func.instruction(&Instruction::LocalGet(temp_count));
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::Call(idx));
+        Ok(())
+    }
+
+    /// Compile pad_start/pad_end(string, target_len, fill): string fat ptr + int + fat ptr
+    /// Stack before: [str_fat_ptr, target_len_i64, fill_fat_ptr] (fill on top)
+    fn compile_pad_op(&mut self, func: &mut Function, import_idx: Option<u32>) -> Result<(), CodegenError> {
+        let idx = import_idx.ok_or(CodegenError::UnsupportedExpression)?;
+        let temp_fill = self.allocate_local("__text_pad_fill");
+        let temp_tlen = self.allocate_local("__text_pad_tlen");
+        let temp_str = self.allocate_local("__text_pad_str");
+
+        func.instruction(&Instruction::LocalSet(temp_fill));
+        func.instruction(&Instruction::LocalSet(temp_tlen));
+        func.instruction(&Instruction::LocalSet(temp_str));
+
+        // Unpack string: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_str));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Target length as i32
+        func.instruction(&Instruction::LocalGet(temp_tlen));
+        func.instruction(&Instruction::I32WrapI64);
+
+        // Unpack fill: ptr, len
+        func.instruction(&Instruction::LocalGet(temp_fill));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::LocalGet(temp_fill));
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::Call(idx));
+        Ok(())
+    }
+
     /// Compile a query step
     ///
     /// Queries are compiled differently based on dialect:
@@ -875,8 +1346,83 @@ impl<'a> SnippetWasmCompiler<'a> {
                 func.instruction(&Instruction::I64Const(0));
                 func.instruction(&Instruction::I64Sub);
             }
-            Operation::Concat | Operation::Contains => {
-                return Err(CodegenError::UnsupportedType { ty: "String".to_string() });
+            // String operations: all compile to host calls via covenant_text imports.
+            // Inputs are i64 fat pointers on the stack; we unpack to (i32 ptr, i32 len) pairs.
+            Operation::Concat => {
+                self.compile_binary_text_op(func, self.runtime.text_concat)?;
+            }
+            Operation::Contains => {
+                self.compile_binary_text_op(func, self.runtime.text_contains)?;
+            }
+            Operation::StartsWith => {
+                self.compile_binary_text_op(func, self.runtime.text_starts_with)?;
+            }
+            Operation::EndsWith => {
+                self.compile_binary_text_op(func, self.runtime.text_ends_with)?;
+            }
+            Operation::IndexOf => {
+                self.compile_binary_text_op(func, self.runtime.text_index_of)?;
+            }
+            Operation::Upper => {
+                self.compile_unary_text_op(func, self.runtime.text_upper)?;
+            }
+            Operation::Lower => {
+                self.compile_unary_text_op(func, self.runtime.text_lower)?;
+            }
+            Operation::Trim => {
+                self.compile_unary_text_op(func, self.runtime.text_trim)?;
+            }
+            Operation::TrimStart => {
+                self.compile_unary_text_op(func, self.runtime.text_trim_start)?;
+            }
+            Operation::TrimEnd => {
+                self.compile_unary_text_op(func, self.runtime.text_trim_end)?;
+            }
+            Operation::StrReverse => {
+                self.compile_unary_text_op(func, self.runtime.text_str_reverse)?;
+            }
+            Operation::StrLen => {
+                self.compile_unary_text_op(func, self.runtime.text_str_len)?;
+            }
+            Operation::ByteLen => {
+                self.compile_unary_text_op(func, self.runtime.text_byte_len)?;
+            }
+            Operation::IsEmpty => {
+                self.compile_unary_text_op(func, self.runtime.text_is_empty)?;
+            }
+            Operation::Slice => {
+                // Inputs: string (fat ptr), start (i64), end (i64)
+                // Host sig: (ptr, len, start_i32, end_i32) -> i64
+                self.compile_slice_op(func)?;
+            }
+            Operation::CharAt => {
+                // Inputs: string (fat ptr), index (i64)
+                // Host sig: (ptr, len, idx_i32) -> i64
+                self.compile_char_at_op(func)?;
+            }
+            Operation::Replace => {
+                // Inputs: string (fat ptr), from (fat ptr), to (fat ptr)
+                // Host sig: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> i64
+                self.compile_replace_op(func)?;
+            }
+            Operation::Split => {
+                self.compile_binary_text_op(func, self.runtime.text_split)?;
+            }
+            Operation::Join => {
+                self.compile_binary_text_op(func, self.runtime.text_join)?;
+            }
+            Operation::Repeat => {
+                // Inputs: string (fat ptr), count (i64)
+                // Host sig: (ptr, len, count_i32) -> i64
+                self.compile_repeat_op(func)?;
+            }
+            Operation::PadStart => {
+                // Inputs: string (fat ptr), target_len (i64), fill (fat ptr)
+                // Host sig: (ptr, len, target_len, fill_ptr, fill_len) -> i64
+                self.compile_pad_op(func, self.runtime.text_pad_start)?;
+            }
+            Operation::PadEnd => {
+                self.compile_pad_op(func, self.runtime.text_pad_end)?;
             }
             // All other operations are not yet supported in WASM codegen
             _ => {
@@ -948,6 +1494,36 @@ impl<'a> SnippetWasmCompiler<'a> {
                 func.instruction(&Instruction::I32WrapI64);
 
                 Ok(Some(print_fn))
+            }
+            // Regex operations: std.text.regex_*
+            name if name.starts_with("std.text.regex_") => {
+                let import_idx = match name {
+                    "std.text.regex_test" => self.runtime.text_regex_test,
+                    "std.text.regex_match" => self.runtime.text_regex_match,
+                    "std.text.regex_replace" => self.runtime.text_regex_replace,
+                    "std.text.regex_replace_all" => self.runtime.text_regex_replace_all,
+                    "std.text.regex_split" => self.runtime.text_regex_split,
+                    _ => return Err(CodegenError::UndefinedFunction { name: name.to_string() }),
+                };
+                let idx = import_idx.ok_or_else(|| CodegenError::UndefinedFunction {
+                    name: format!("{} (text imports not registered?)", name),
+                })?;
+
+                // Compile all arguments and unpack their fat pointers
+                for arg in &call.args {
+                    self.compile_input(&arg.source, func)?;
+                    // Each arg is an i64 fat pointer; unpack to (i32 ptr, i32 len)
+                    let temp = self.allocate_local(&format!("__regex_arg_{}", arg.name));
+                    func.instruction(&Instruction::LocalSet(temp));
+                    func.instruction(&Instruction::LocalGet(temp));
+                    func.instruction(&Instruction::I64Const(32));
+                    func.instruction(&Instruction::I64ShrU);
+                    func.instruction(&Instruction::I32WrapI64);
+                    func.instruction(&Instruction::LocalGet(temp));
+                    func.instruction(&Instruction::I32WrapI64);
+                }
+
+                Ok(Some(idx))
             }
             _ => Ok(None),
         }
@@ -1222,6 +1798,85 @@ fn steps_have_string_literals(steps: &[Step]) -> bool {
         }
     }
     false
+}
+
+/// Check if a snippet uses any string operations (triggers text import registration)
+fn snippet_has_string_ops(snippet: &Snippet) -> bool {
+    if let Some(body) = find_body_section(snippet) {
+        return steps_have_string_ops(&body.steps);
+    }
+    false
+}
+
+/// Check if steps contain any string operations
+fn steps_have_string_ops(steps: &[Step]) -> bool {
+    for step in steps {
+        match &step.kind {
+            StepKind::Compute(compute) => {
+                if is_string_operation(&compute.op) {
+                    return true;
+                }
+            }
+            StepKind::Call(call) => {
+                if call.fn_name.starts_with("std.text.") {
+                    return true;
+                }
+            }
+            StepKind::If(if_step) => {
+                if steps_have_string_ops(&if_step.then_steps) {
+                    return true;
+                }
+                if let Some(else_steps) = &if_step.else_steps {
+                    if steps_have_string_ops(else_steps) {
+                        return true;
+                    }
+                }
+            }
+            StepKind::Match(match_step) => {
+                for case in &match_step.cases {
+                    if steps_have_string_ops(&case.steps) {
+                        return true;
+                    }
+                }
+            }
+            StepKind::For(for_step) => {
+                if steps_have_string_ops(&for_step.steps) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Returns true if the operation is a string operation requiring host calls
+fn is_string_operation(op: &Operation) -> bool {
+    matches!(
+        op,
+        Operation::Concat
+            | Operation::Contains
+            | Operation::Slice
+            | Operation::Upper
+            | Operation::Lower
+            | Operation::Trim
+            | Operation::TrimStart
+            | Operation::TrimEnd
+            | Operation::Replace
+            | Operation::Split
+            | Operation::Join
+            | Operation::Repeat
+            | Operation::StrLen
+            | Operation::ByteLen
+            | Operation::IsEmpty
+            | Operation::StartsWith
+            | Operation::EndsWith
+            | Operation::IndexOf
+            | Operation::CharAt
+            | Operation::StrReverse
+            | Operation::PadStart
+            | Operation::PadEnd
+    )
 }
 
 /// Compute a deterministic tag value for a variant name

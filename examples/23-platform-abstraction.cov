@@ -2,8 +2,8 @@
 // Demonstrates extern-abstract and extern-impl snippets
 
 // ===== Abstract Declaration =====
-// Declares a console.println function that must have implementations
-// for all listed platforms
+// Declares a console.println function interface.
+// Platform support is determined by which extern-impl snippets exist.
 
 snippet id="console.println" kind="extern-abstract"
 
@@ -16,12 +16,6 @@ signature
     param name="msg" type="String"
     returns type="Unit"
   end
-end
-
-platforms
-  platform="browser"
-  platform="node"
-  platform="wasi"
 end
 
 end

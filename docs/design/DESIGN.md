@@ -397,15 +397,20 @@ See [QUERY_SEMANTICS.md](QUERY_SEMANTICS.md) for formal operational semantics.
 
 ### 6.1 Declaration
 
-Effects are declared per-snippet:
+Effects are declared per-snippet. Effect names may use dot-separated namespacing:
 
 ```
 effects
   effect database
   effect network
-  effect filesystem(path="/data")
+  effect filesystem
+  effect std.storage
+  effect database.read
+  effect network.http
 end
 ```
+
+Each dotted name is an independent effect — `database` and `database.read` are separate, unrelated effects with no subsumption relationship. Namespacing is a naming convention for organizing effects, not a hierarchy.
 
 ### 6.2 Propagation
 

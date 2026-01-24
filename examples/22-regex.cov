@@ -1,0 +1,50 @@
+// Regex Operations - pattern matching via native JavaScript RegExp
+//
+// This example demonstrates:
+// - regex_replace_all via std.text extern calls
+// - regex_replace via std.text extern calls
+// - All regex runs in the host (V8 RegExp), not in WASM
+
+snippet id="main.regex_demo" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="main"
+    returns type="Unit"
+  end
+end
+
+body
+  // regex_replace_all: replace all digits with X
+  step id="s1" kind="call"
+    fn="std.text.regex_replace_all"
+    arg name="pattern" lit="\\d"
+    arg name="input" lit="abc123def456"
+    arg name="replacement" lit="X"
+    as="replaced"
+  end
+  step id="s1p" kind="call"
+    fn="console.println"
+    arg name="message" from="replaced"
+    as="_"
+  end
+
+  // regex_replace: replace first word
+  step id="s2" kind="call"
+    fn="std.text.regex_replace"
+    arg name="pattern" lit="\\w+"
+    arg name="input" lit="hello world foo"
+    arg name="replacement" lit="HI"
+    as="first_replaced"
+  end
+  step id="s2p" kind="call"
+    fn="console.println"
+    arg name="message" from="first_replaced"
+    as="_"
+  end
+end
+
+end

@@ -97,9 +97,6 @@ pub struct SymbolInfo {
     pub unresolved_references: HashSet<String>,
 
     // === Platform Abstraction (for extern-abstract and extern-impl) ===
-    /// For extern-abstract: the platforms this snippet declares support for
-    pub platforms: Vec<String>,
-
     /// For extern-impl: the abstract snippet ID this implements
     pub implements: Option<String>,
 
@@ -124,7 +121,6 @@ impl SymbolInfo {
             relations_from: Vec::new(),
             unresolved_calls: HashSet::new(),
             unresolved_references: HashSet::new(),
-            platforms: Vec::new(),
             implements: None,
             target_platform: None,
         }

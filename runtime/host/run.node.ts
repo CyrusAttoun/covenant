@@ -1,62 +1,46 @@
 /**
- * Minimal Covenant WASM runner for Deno
+ * Node-compatible Covenant WASM runner (for testing when Deno is unavailable)
  *
- * Usage: deno run --allow-read run.deno.ts <file.wasm>
- *
- * Provides the runtime imports required by Covenant-compiled WASM:
- * - covenant_io.print(ptr, len) - print string from memory
- * - covenant_mem.alloc(size) - allocate memory (simple bump allocator)
- * - covenant_text.* - string and regex operations
+ * Usage: npx tsx run.node.ts <file.wasm>
  */
 
-const wasmPath = Deno.args[0];
+import { readFileSync } from 'fs';
+
+const wasmPath = process.argv[2];
 if (!wasmPath) {
-  console.error('Usage: deno run --allow-read run.deno.ts <file.wasm>');
-  Deno.exit(1);
+  console.error('Usage: npx tsx run.node.ts <file.wasm>');
+  process.exit(1);
 }
 
-// Read the WASM file
-const wasmBytes = await Deno.readFile(wasmPath);
+const wasmBytes = readFileSync(wasmPath);
 
-// Memory will be set after instantiation (exported from WASM module)
 let memory: WebAssembly.Memory | null = null;
+let heapPtr = 0x10000;
 
-// Simple bump allocator state
-let heapPtr = 0x10000; // Start allocations after typical data segment
-
-// ===== String helpers for WASM ↔ host communication =====
-
-/** Read a UTF-8 string from WASM memory */
 function readStr(ptr: number, len: number): string {
   if (!memory || len === 0) return '';
   const bytes = new Uint8Array(memory.buffer, ptr, len);
   return new TextDecoder().decode(bytes);
 }
 
-/** Write a string into WASM memory, returns i64 fat pointer as bigint: (offset << 32) | len */
 function writeStr(s: string): bigint {
   const encoded = new TextEncoder().encode(s);
   const ptr = heapPtr;
-  heapPtr += (encoded.length + 7) & ~7; // 8-byte aligned
+  heapPtr += (encoded.length + 7) & ~7;
   if (memory) {
     new Uint8Array(memory.buffer, ptr, encoded.length).set(encoded);
   }
   return (BigInt(ptr) << 32n) | BigInt(encoded.length);
 }
 
-/** Write an array of strings into WASM memory as [count:i32][fat_ptr_1:i64]...[fat_ptr_n:i64] */
 function writeStrArray(parts: string[]): bigint {
-  // First write each string, collecting fat pointers
   const fatPtrs: bigint[] = parts.map(s => writeStr(s));
-
-  // Write header: 4 bytes for count + 8 bytes per fat pointer
   const headerSize = 4 + fatPtrs.length * 8;
   const headerPtr = heapPtr;
   heapPtr += (headerSize + 7) & ~7;
-
   if (memory) {
     const view = new DataView(memory.buffer);
-    view.setInt32(headerPtr, fatPtrs.length, true); // little-endian count
+    view.setInt32(headerPtr, fatPtrs.length, true);
     for (let i = 0; i < fatPtrs.length; i++) {
       view.setBigInt64(headerPtr + 4 + i * 8, fatPtrs[i], true);
     }
@@ -64,7 +48,6 @@ function writeStrArray(parts: string[]): bigint {
   return (BigInt(headerPtr) << 32n) | BigInt(headerSize);
 }
 
-/** Read an array of strings from WASM memory (reverse of writeStrArray) */
 function readStrArray(ptr: number, _len: number): string[] {
   if (!memory) return [];
   const view = new DataView(memory.buffer);
@@ -81,93 +64,57 @@ function readStrArray(ptr: number, _len: number): string[] {
 
 const imports: WebAssembly.Imports = {
   covenant_io: {
-    /**
-     * Print a string from WASM memory
-     */
     print: (ptr: number, len: number) => {
-      if (!memory) {
-        console.error('[runtime] Memory not initialized');
-        return;
-      }
+      if (!memory) { console.error('[runtime] Memory not initialized'); return; }
       const bytes = new Uint8Array(memory.buffer, ptr, len);
-      const str = new TextDecoder().decode(bytes);
-      console.log(str);
+      console.log(new TextDecoder().decode(bytes));
     }
   },
   covenant_mem: {
-    /**
-     * Allocate memory (simple bump allocator)
-     */
     alloc: (size: number): number => {
       const ptr = heapPtr;
-      // Align to 8 bytes
       heapPtr += (size + 7) & ~7;
       return ptr;
     }
   },
   covenant_text: {
-    // --- Unary -> String ---
     upper: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).toUpperCase()),
     lower: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).toLowerCase()),
     trim: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).trim()),
     trim_start: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).trimStart()),
     trim_end: (ptr: number, len: number): bigint => writeStr(readStr(ptr, len).trimEnd()),
     str_reverse: (ptr: number, len: number): bigint => writeStr([...readStr(ptr, len)].reverse().join('')),
-
-    // --- Unary -> Int ---
     str_len: (ptr: number, len: number): bigint => BigInt([...readStr(ptr, len)].length),
     byte_len: (_ptr: number, len: number): bigint => BigInt(len),
     is_empty: (_ptr: number, len: number): bigint => len === 0 ? 1n : 0n,
-
-    // --- Binary -> String ---
     concat: (p1: number, l1: number, p2: number, l2: number): bigint =>
       writeStr(readStr(p1, l1) + readStr(p2, l2)),
-
-    // --- Binary -> Bool (as i64 0/1) ---
     contains: (p1: number, l1: number, p2: number, l2: number): bigint =>
       readStr(p1, l1).includes(readStr(p2, l2)) ? 1n : 0n,
     starts_with: (p1: number, l1: number, p2: number, l2: number): bigint =>
       readStr(p1, l1).startsWith(readStr(p2, l2)) ? 1n : 0n,
     ends_with: (p1: number, l1: number, p2: number, l2: number): bigint =>
       readStr(p1, l1).endsWith(readStr(p2, l2)) ? 1n : 0n,
-
-    // --- Binary -> Int ---
     index_of: (p1: number, l1: number, p2: number, l2: number): bigint =>
       BigInt(readStr(p1, l1).indexOf(readStr(p2, l2))),
-
-    // --- Slice: (ptr, len, start, end) -> fat pointer ---
     slice: (ptr: number, len: number, start: number, end: number): bigint =>
       writeStr([...readStr(ptr, len)].slice(start, end).join('')),
-
-    // --- CharAt: (ptr, len, idx) -> fat pointer ---
     char_at: (ptr: number, len: number, idx: number): bigint => {
       const ch = [...readStr(ptr, len)][idx] ?? '';
       return writeStr(ch);
     },
-
-    // --- Replace: (s_ptr, s_len, from_ptr, from_len, to_ptr, to_len) -> fat pointer ---
     replace: (sp: number, sl: number, fp: number, fl: number, tp: number, tl: number): bigint =>
       writeStr(readStr(sp, sl).replace(readStr(fp, fl), readStr(tp, tl))),
-
-    // --- Split: (ptr, len, delim_ptr, delim_len) -> fat pointer (serialized array) ---
     split: (ptr: number, len: number, dp: number, dl: number): bigint =>
       writeStrArray(readStr(ptr, len).split(readStr(dp, dl))),
-
-    // --- Join: (arr_ptr, arr_len, sep_ptr, sep_len) -> fat pointer ---
     join: (ap: number, al: number, sp: number, sl: number): bigint =>
       writeStr(readStrArray(ap, al).join(readStr(sp, sl))),
-
-    // --- Repeat: (ptr, len, count) -> fat pointer ---
     repeat: (ptr: number, len: number, count: number): bigint =>
       writeStr(readStr(ptr, len).repeat(count)),
-
-    // --- Pad: (ptr, len, target_len, fill_ptr, fill_len) -> fat pointer ---
     pad_start: (ptr: number, len: number, targetLen: number, fp: number, fl: number): bigint =>
       writeStr(readStr(ptr, len).padStart(targetLen, readStr(fp, fl))),
     pad_end: (ptr: number, len: number, targetLen: number, fp: number, fl: number): bigint =>
       writeStr(readStr(ptr, len).padEnd(targetLen, readStr(fp, fl))),
-
-    // --- Regex operations (using native JavaScript RegExp) ---
     regex_test: (pp: number, pl: number, ip: number, il: number): bigint => {
       try { return new RegExp(readStr(pp, pl)).test(readStr(ip, il)) ? 1n : 0n; }
       catch { return 0n; }
@@ -176,11 +123,7 @@ const imports: WebAssembly.Imports = {
       try {
         const match = readStr(ip, il).match(new RegExp(readStr(pp, pl)));
         if (!match) return 0n;
-        return writeStr(JSON.stringify({
-          matched: match[0],
-          index: match.index,
-          groups: match.slice(1),
-        }));
+        return writeStr(JSON.stringify({ matched: match[0], index: match.index, groups: match.slice(1) }));
       } catch { return 0n; }
     },
     regex_replace: (pp: number, pl: number, ip: number, il: number, rp: number, rl: number): bigint => {
@@ -198,40 +141,17 @@ const imports: WebAssembly.Imports = {
   }
 };
 
-try {
-  // Instantiate the WASM module
-  const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
-
-  // Get the exported memory
-  memory = instance.exports.memory as WebAssembly.Memory;
-  if (!memory) {
-    console.error('[runtime] WASM module does not export memory');
-    Deno.exit(1);
+(async () => {
+  try {
+    const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
+    memory = instance.exports.memory as WebAssembly.Memory;
+    if (!memory) { console.error('[runtime] No memory export'); process.exit(1); }
+    const main = instance.exports.main as (() => void) | undefined;
+    if (!main) { console.error('[runtime] No main export'); process.exit(1); }
+    main();
+  } catch (err) {
+    console.error('[runtime] Error:', (err as Error).message);
+    if ((err as Error).stack) console.error((err as Error).stack);
+    process.exit(1);
   }
-
-  // Find and call the main function
-  const main = instance.exports.main as (() => void) | undefined;
-  if (!main) {
-    const exports = Object.keys(instance.exports).filter(k =>
-      typeof instance.exports[k] === 'function'
-    );
-
-    if (exports.length === 0) {
-      console.error('[runtime] No exported functions found');
-      Deno.exit(1);
-    }
-
-    console.error(`[runtime] No 'main' function found. Available: ${exports.join(', ')}`);
-    Deno.exit(1);
-  }
-
-  // Call main
-  main();
-
-} catch (err) {
-  console.error('[runtime] Error:', (err as Error).message);
-  if ((err as Error).stack) {
-    console.error((err as Error).stack);
-  }
-  Deno.exit(1);
-}
+})();

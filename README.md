@@ -6,6 +6,32 @@ Covenant is not a language for humans to write by hand. It's an intermediate rep
 
 ---
 
+## Installation
+
+**macOS / Linux:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Cyronius/covenant/master/install/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/Cyronius/covenant/master/install/install.ps1 | iex
+```
+
+**Auto-install shim** — drop into your project or CI for on-demand installation:
+
+```sh
+# Unix
+./install/shim.sh run myfile.cov
+
+# Windows
+.\install\shim.bat run myfile.cov
+```
+
+---
+
 ## Why AI-First?
 
 Traditional languages optimize for human authorship. Covenant optimizes for machine generation:

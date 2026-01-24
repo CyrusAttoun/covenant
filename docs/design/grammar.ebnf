@@ -48,7 +48,8 @@ section        = effects_section
 (* === Effects Section === *)
 (* Declares capabilities this snippet requires *)
 effects_section = "effects" { effect_decl } "end" ;
-effect_decl     = "effect" IDENT [ effect_params ] ;
+effect_decl     = "effect" effect_name [ effect_params ] ;
+effect_name     = IDENT { "." IDENT } ;
 effect_params   = "(" { effect_param } ")" ;
 effect_param    = IDENT "=" value ;
 

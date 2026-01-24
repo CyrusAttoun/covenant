@@ -4,7 +4,7 @@
 
 use crate::{RelationRef, SymbolError, SymbolGraph, SymbolInfo, SymbolKind};
 use covenant_ast::{
-    BodySection, EffectsSection, PlatformsSection, RelationsSection, ReturnType, ReturnValue,
+    BodySection, EffectsSection, RelationsSection, ReturnType, ReturnValue,
     Section, SignatureKind, SignatureSection, Snippet, SnippetKind, Step, StepKind, TestsSection,
     Type, TypeKind,
 };
@@ -76,9 +76,6 @@ impl SymbolExtractor {
                     symbol.calls.extend(test_calls);
                     symbol.references.extend(test_refs);
                 }
-                Section::Platforms(platforms) => {
-                    symbol.platforms = self.extract_platforms(platforms);
-                }
                 _ => {} // Other sections handled in later passes
             }
         }
@@ -89,11 +86,6 @@ impl SymbolExtractor {
     /// Extract effect names from effects section
     fn extract_effects(&self, effects: &EffectsSection) -> Vec<String> {
         effects.effects.iter().map(|e| e.name.clone()).collect()
-    }
-
-    /// Extract platform names from platforms section
-    fn extract_platforms(&self, platforms: &PlatformsSection) -> Vec<String> {
-        platforms.platforms.iter().map(|p| p.name.clone()).collect()
     }
 
     /// Extract type references from signature

@@ -76,6 +76,78 @@ impl SnippetChecker {
             ResolvedType::None,
         );
         self.function_returns.insert("console.error".to_string(), ResolvedType::None);
+
+        // std.text.regex_test - test if regex matches
+        self.symbols.define(
+            "std.text.regex_test".to_string(),
+            SymbolKind::Function {
+                params: vec![
+                    ("pattern".to_string(), ResolvedType::String),
+                    ("input".to_string(), ResolvedType::String),
+                ],
+                effects: vec![],
+            },
+            ResolvedType::Bool,
+        );
+        self.function_returns.insert("std.text.regex_test".to_string(), ResolvedType::Bool);
+
+        // std.text.regex_match - find first match (returns String: JSON-encoded or empty)
+        self.symbols.define(
+            "std.text.regex_match".to_string(),
+            SymbolKind::Function {
+                params: vec![
+                    ("pattern".to_string(), ResolvedType::String),
+                    ("input".to_string(), ResolvedType::String),
+                ],
+                effects: vec![],
+            },
+            ResolvedType::String,
+        );
+        self.function_returns.insert("std.text.regex_match".to_string(), ResolvedType::String);
+
+        // std.text.regex_replace - replace first match
+        self.symbols.define(
+            "std.text.regex_replace".to_string(),
+            SymbolKind::Function {
+                params: vec![
+                    ("pattern".to_string(), ResolvedType::String),
+                    ("input".to_string(), ResolvedType::String),
+                    ("replacement".to_string(), ResolvedType::String),
+                ],
+                effects: vec![],
+            },
+            ResolvedType::String,
+        );
+        self.function_returns.insert("std.text.regex_replace".to_string(), ResolvedType::String);
+
+        // std.text.regex_replace_all - replace all matches
+        self.symbols.define(
+            "std.text.regex_replace_all".to_string(),
+            SymbolKind::Function {
+                params: vec![
+                    ("pattern".to_string(), ResolvedType::String),
+                    ("input".to_string(), ResolvedType::String),
+                    ("replacement".to_string(), ResolvedType::String),
+                ],
+                effects: vec![],
+            },
+            ResolvedType::String,
+        );
+        self.function_returns.insert("std.text.regex_replace_all".to_string(), ResolvedType::String);
+
+        // std.text.regex_split - split by regex pattern
+        self.symbols.define(
+            "std.text.regex_split".to_string(),
+            SymbolKind::Function {
+                params: vec![
+                    ("pattern".to_string(), ResolvedType::String),
+                    ("input".to_string(), ResolvedType::String),
+                ],
+                effects: vec![],
+            },
+            ResolvedType::String, // Returns serialized array as fat pointer
+        );
+        self.function_returns.insert("std.text.regex_split".to_string(), ResolvedType::String);
     }
 
     /// Check all snippets and return the result

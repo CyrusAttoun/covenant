@@ -59,8 +59,6 @@ pub enum Section {
     Schema(SchemaSection),
     Types(TypesSection),
     Tools(ToolsSection),
-    /// Platform declarations for extern-abstract snippets
-    Platforms(PlatformsSection),
 }
 
 // ===== Effects Section =====
@@ -76,49 +74,6 @@ pub struct EffectDecl {
     pub name: String,
     pub params: Vec<String>,
     pub span: Span,
-}
-
-// ===== Platforms Section =====
-
-/// Declares which platforms an extern-abstract snippet supports
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlatformsSection {
-    pub platforms: Vec<PlatformDecl>,
-    pub span: Span,
-}
-
-/// A single platform declaration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlatformDecl {
-    pub name: String,
-    pub span: Span,
-}
-
-/// Known compilation targets
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Platform {
-    Browser,
-    Node,
-    Wasi,
-}
-
-impl Platform {
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "browser" => Some(Platform::Browser),
-            "node" => Some(Platform::Node),
-            "wasi" => Some(Platform::Wasi),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Platform::Browser => "browser",
-            Platform::Node => "node",
-            Platform::Wasi => "wasi",
-        }
-    }
 }
 
 // ===== Requirements Section =====

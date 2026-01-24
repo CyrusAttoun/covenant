@@ -1,0 +1,109 @@
+(* std.text.regex - Regular Expression Operations *)
+(*
+   Pattern matching and substitution using native JavaScript RegExp.
+   Pure computation — no effects required.
+
+   Platform backends:
+   - Deno: V8 RegExp (default target)
+   - Browser: V8/SpiderMonkey/JSC RegExp
+   - Node.js: V8 RegExp
+
+   Patterns are passed as plain strings (not precompiled).
+   Invalid patterns return safe defaults (false/empty/input unchanged).
+*)
+
+(* ============================================================ *)
+(* Regex Functions                                              *)
+(* ============================================================ *)
+
+(* Test if pattern matches input *)
+snippet id="std.text.regex_test" kind="extern-abstract"
+
+signature
+  fn name="regex_test"
+    param name="pattern" type="String"
+    param name="input" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Test if regex pattern matches anywhere in input string"
+  cost_hint=cheap
+end
+
+end
+
+(* Find first match (returns JSON-encoded MatchResult or empty string) *)
+snippet id="std.text.regex_match" kind="extern-abstract"
+
+signature
+  fn name="regex_match"
+    param name="pattern" type="String"
+    param name="input" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Find first regex match. Returns JSON: {matched, index, groups} or empty"
+  cost_hint=moderate
+end
+
+end
+
+(* Replace first match *)
+snippet id="std.text.regex_replace" kind="extern-abstract"
+
+signature
+  fn name="regex_replace"
+    param name="pattern" type="String"
+    param name="input" type="String"
+    param name="replacement" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Replace first regex match with replacement string"
+  cost_hint=moderate
+end
+
+end
+
+(* Replace all matches *)
+snippet id="std.text.regex_replace_all" kind="extern-abstract"
+
+signature
+  fn name="regex_replace_all"
+    param name="pattern" type="String"
+    param name="input" type="String"
+    param name="replacement" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Replace all regex matches with replacement string"
+  cost_hint=moderate
+end
+
+end
+
+(* Split by regex pattern *)
+snippet id="std.text.regex_split" kind="extern-abstract"
+
+signature
+  fn name="regex_split"
+    param name="pattern" type="String"
+    param name="input" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Split string by regex pattern. Returns serialized array"
+  cost_hint=moderate
+end
+
+end
