@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 use wasm_encoder::{
     BlockType, CodeSection, DataSection, ExportKind, ExportSection, Function, FunctionSection,
-    GlobalSection, GlobalType, ImportSection, Instruction, MemorySection, MemoryType, Module,
-    TypeSection, ValType,
+    GlobalSection, GlobalType, ImportSection, Instruction, MemArg, MemorySection, MemoryType,
+    Module, TypeSection, ValType,
 };
 use covenant_ast::{
     BindSource, BindStep, CallStep, ComputeStep, EffectsSection, ForStep, FunctionSignature,
@@ -29,25 +29,30 @@ use crate::CodegenError;
 pub struct FieldLayout {
     /// Offset from struct base pointer
     pub offset: u32,
-    /// Size in bytes
+    /// Size in bytes (for future per-type sizing)
+    #[allow(dead_code)]
     pub size: u32,
-    /// WASM type for this field
+    /// WASM type for this field (for future per-type sizing)
+    #[allow(dead_code)]
     pub wasm_type: WasmType,
 }
 
 /// Layout information for structs
 #[derive(Debug, Clone)]
 pub struct StructLayout {
-    /// Total size in bytes
+    /// Total size in bytes (for future per-type sizing)
+    #[allow(dead_code)]
     pub size: u32,
-    /// Alignment requirement
+    /// Alignment requirement (for future per-type sizing)
+    #[allow(dead_code)]
     pub alignment: u32,
     /// Field layouts by name
     pub fields: HashMap<String, FieldLayout>,
 }
 
-/// WASM type representation
+/// WASM type representation (currently only I64 is used; others reserved for future per-type layout)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum WasmType {
     I32,
     I64,
@@ -57,6 +62,7 @@ pub enum WasmType {
     Ptr,
 }
 
+#[allow(dead_code)]
 impl WasmType {
     pub fn size(&self) -> u32 {
         match self {
@@ -184,6 +190,8 @@ pub struct SnippetWasmCompiler<'a> {
     data_segment: DataSegmentBuilder,
     /// Struct layouts by type name
     struct_layouts: HashMap<String, StructLayout>,
+    /// Maps local variable names to their struct type name (for field access)
+    local_types: HashMap<String, String>,
     /// Runtime function indices (set after imports are processed)
     runtime: RuntimeFunctions,
 }
@@ -256,6 +264,7 @@ impl<'a> SnippetWasmCompiler<'a> {
             imports: ImportTracker::new(),
             data_segment: DataSegmentBuilder::new(),
             struct_layouts: HashMap::new(),
+            local_types: HashMap::new(),
             runtime: RuntimeFunctions::default(),
         }
     }
@@ -735,6 +744,10 @@ impl<'a> SnippetWasmCompiler<'a> {
                         count += call.args.len() as u32;
                     }
                 }
+                StepKind::Construct(_) => {
+                    // Struct construction needs a temp local for the pointer
+                    count += 1;
+                }
                 _ => {}
             }
         }
@@ -797,6 +810,18 @@ impl<'a> SnippetWasmCompiler<'a> {
                 }
             }
             StepKind::Construct(construct) => {
+                // Register struct layout and track variable type for field access
+                let type_name = match &construct.ty.kind {
+                    TypeKind::Named(path) => path.name().to_string(),
+                    _ => format!("{:?}", construct.ty.kind),
+                };
+                if !self.struct_layouts.contains_key(&type_name) {
+                    let layout = Self::compute_struct_layout(construct);
+                    self.struct_layouts.insert(type_name.clone(), layout);
+                }
+                if step.output_binding != "_" {
+                    self.local_types.insert(step.output_binding.clone(), type_name);
+                }
                 self.compile_construct_step(construct, func)?;
                 // Store result if not discarded
                 if step.output_binding != "_" {
@@ -961,39 +986,66 @@ impl<'a> SnippetWasmCompiler<'a> {
         Ok(())
     }
 
-    /// Compile a struct construction step
+    /// Compute the memory layout for a struct based on its field list.
+    /// All fields are i64 (8 bytes each), stored sequentially.
+    fn compute_struct_layout(construct: &StructConstruction) -> StructLayout {
+        let mut fields = HashMap::new();
+        for (i, field) in construct.fields.iter().enumerate() {
+            fields.insert(field.name.clone(), FieldLayout {
+                offset: (i as u32) * 8,
+                size: 8,
+                wasm_type: WasmType::I64,
+            });
+        }
+        StructLayout {
+            size: (construct.fields.len() as u32) * 8,
+            alignment: 8,
+            fields,
+        }
+    }
+
+    /// Compile a struct construction step using linear memory allocation.
     ///
-    /// For simple structs (like Point with 2 Int fields), we pack the fields
-    /// into a single i64: (field1 << 32) | (field2 & 0xFFFFFFFF)
+    /// Allocates space on the heap (bump allocator via global 0), stores each
+    /// field at its computed offset, and leaves the struct pointer (as i64) on the stack.
+    ///
+    /// All locals are i64, so the pointer is stored as i64 (zero-extended from i32).
+    /// For memory operations, we wrap i64 back to i32.
     fn compile_construct_step(
         &mut self,
         construct: &StructConstruction,
         func: &mut Function,
     ) -> Result<(), CodegenError> {
-        // For a 2-field struct like Point{x, y}, pack into single i64
-        // This is a simplified MVP - real implementation would use memory allocation
-        if construct.fields.len() == 2 {
-            // Compile first field, shift left 32 bits
-            self.compile_input(&construct.fields[0].value, func)?;
-            func.instruction(&Instruction::I64Const(32));
-            func.instruction(&Instruction::I64Shl);
+        let struct_size = (construct.fields.len() as u32) * 8;
+        let ptr_local = self.allocate_local("__struct_ptr");
 
-            // Compile second field, mask to 32 bits
-            self.compile_input(&construct.fields[1].value, func)?;
-            func.instruction(&Instruction::I64Const(0xFFFFFFFF));
-            func.instruction(&Instruction::I64And);
+        // Bump-allocate: ptr = heap_ptr; heap_ptr += size
+        // GlobalGet(0) returns i32, extend to i64 for our local
+        func.instruction(&Instruction::GlobalGet(0));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalTee(ptr_local));
+        // Compute new heap_ptr: wrap back to i32, add size, set global
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(struct_size as i32));
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::GlobalSet(0));
 
-            // Combine with OR
-            func.instruction(&Instruction::I64Or);
-        } else if construct.fields.len() == 1 {
-            // Single field struct - just use the field value
-            self.compile_input(&construct.fields[0].value, func)?;
-        } else {
-            // For more complex structs, we'd need memory allocation
-            // For now, just push 0 as placeholder
-            func.instruction(&Instruction::I64Const(0));
+        // Store each field at its offset
+        for (i, field) in construct.fields.iter().enumerate() {
+            let offset = (i as u32) * 8;
+            // Get ptr as i32 for memory address
+            func.instruction(&Instruction::LocalGet(ptr_local));
+            func.instruction(&Instruction::I32WrapI64);
+            self.compile_input(&field.value, func)?;
+            func.instruction(&Instruction::I64Store(MemArg {
+                offset: offset as u64,
+                align: 3, // 2^3 = 8 byte alignment
+                memory_index: 0,
+            }));
         }
 
+        // Leave struct pointer as i64 on stack (already stored as i64 in local)
+        func.instruction(&Instruction::LocalGet(ptr_local));
         Ok(())
     }
 
@@ -1589,9 +1641,29 @@ impl<'a> SnippetWasmCompiler<'a> {
             BindSource::Lit(lit) => {
                 self.compile_literal(lit, func)?;
             }
-            BindSource::Field { .. } => {
-                // Field access not yet supported
-                return Err(CodegenError::UnsupportedExpression);
+            BindSource::Field { of, field } => {
+                // Get struct pointer from local variable
+                let local = *self.locals.get(of)
+                    .ok_or_else(|| CodegenError::UndefinedFunction { name: of.clone() })?;
+                func.instruction(&Instruction::LocalGet(local));
+                func.instruction(&Instruction::I32WrapI64); // i64 -> i32 ptr
+
+                // Look up field offset from struct layout
+                let type_name = self.local_types.get(of)
+                    .ok_or(CodegenError::UnsupportedExpression)?
+                    .clone();
+                let layout = self.struct_layouts.get(&type_name)
+                    .ok_or(CodegenError::UnsupportedExpression)?;
+                let field_layout = layout.fields.get(field)
+                    .ok_or(CodegenError::UnsupportedExpression)?;
+                let offset = field_layout.offset as u64;
+
+                // Load i64 value from (ptr + offset)
+                func.instruction(&Instruction::I64Load(MemArg {
+                    offset,
+                    align: 3, // 2^3 = 8 byte alignment
+                    memory_index: 0,
+                }));
             }
         }
         Ok(())
@@ -1608,9 +1680,29 @@ impl<'a> SnippetWasmCompiler<'a> {
             InputSource::Lit(lit) => {
                 self.compile_literal(lit, func)?;
             }
-            InputSource::Field { .. } => {
-                // Field access not yet supported
-                return Err(CodegenError::UnsupportedExpression);
+            InputSource::Field { of, field } => {
+                // Get struct pointer from local variable
+                let local = *self.locals.get(of)
+                    .ok_or_else(|| CodegenError::UndefinedFunction { name: of.clone() })?;
+                func.instruction(&Instruction::LocalGet(local));
+                func.instruction(&Instruction::I32WrapI64); // i64 -> i32 ptr
+
+                // Look up field offset from struct layout
+                let type_name = self.local_types.get(of)
+                    .ok_or(CodegenError::UnsupportedExpression)?
+                    .clone();
+                let layout = self.struct_layouts.get(&type_name)
+                    .ok_or(CodegenError::UnsupportedExpression)?;
+                let field_layout = layout.fields.get(field)
+                    .ok_or(CodegenError::UnsupportedExpression)?;
+                let offset = field_layout.offset as u64;
+
+                // Load i64 value from (ptr + offset)
+                func.instruction(&Instruction::I64Load(MemArg {
+                    offset,
+                    align: 3, // 2^3 = 8 byte alignment
+                    memory_index: 0,
+                }));
             }
         }
         Ok(())

@@ -997,12 +997,10 @@ end
     assert_eq!(std::str::from_utf8(string_bytes).unwrap(), "Hello, World!");
 }
 
-// === Struct Tests (FAILS: Struct codegen not implemented) ===
+// === Struct Tests ===
 
 #[test]
 fn test_compile_struct_construction() {
-    // TDD: Struct construction not implemented in codegen
-    // Structs require memory allocation and layout
     let source = r#"
 snippet id="types.Point" kind="struct"
 signature
@@ -1040,19 +1038,215 @@ end
         .get_typed_func::<(i64, i64), i64>(&mut store, "make_point")
         .expect("Failed to get 'make_point' function");
 
-    // Point is packed as (x << 32) | y
+    // Result is a pointer (as i64) to memory where fields are stored
     let result = make_point.call(&mut store, (10, 20)).unwrap();
-    let x = (result >> 32) as i32;
-    let y = (result & 0xFFFFFFFF) as i32;
+    let ptr = result as u32 as usize;
+
+    // Read fields from memory: each field is i64 (8 bytes), field 0 at offset 0, field 1 at offset 8
+    let memory = instance.get_memory(&mut store, "memory")
+        .expect("Failed to get memory");
+    let data = memory.data(&store);
+    let x = i64::from_le_bytes(data[ptr..ptr+8].try_into().unwrap());
+    let y = i64::from_le_bytes(data[ptr+8..ptr+16].try_into().unwrap());
     assert_eq!(x, 10);
     assert_eq!(y, 20);
 
     // Test with different values
     let result2 = make_point.call(&mut store, (100, 200)).unwrap();
-    let x2 = (result2 >> 32) as i32;
-    let y2 = (result2 & 0xFFFFFFFF) as i32;
+    let ptr2 = result2 as u32 as usize;
+    let data2 = memory.data(&store);
+    let x2 = i64::from_le_bytes(data2[ptr2..ptr2+8].try_into().unwrap());
+    let y2 = i64::from_le_bytes(data2[ptr2+8..ptr2+16].try_into().unwrap());
     assert_eq!(x2, 100);
     assert_eq!(y2, 200);
+
+    // Verify second allocation is after first (bump allocator)
+    assert_eq!(ptr2, ptr + 16); // Point is 2 fields * 8 bytes = 16 bytes
+}
+
+#[test]
+fn test_compile_struct_three_fields() {
+    let source = r#"
+snippet id="types.Vec3" kind="struct"
+signature
+  struct name="Vec3"
+    field name="x" type="Int"
+    field name="y" type="Int"
+    field name="z" type="Int"
+  end
+end
+end
+
+snippet id="test.make_vec3" kind="fn"
+signature
+  fn name="make_vec3"
+    param name="x" type="Int"
+    param name="y" type="Int"
+    param name="z" type="Int"
+    returns type="Vec3"
+  end
+end
+body
+  step id="s1" kind="construct"
+    type="Vec3"
+    field name="x" from="x"
+    field name="y" from="y"
+    field name="z" from="z"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let make_vec3 = instance
+        .get_typed_func::<(i64, i64, i64), i64>(&mut store, "make_vec3")
+        .expect("Failed to get 'make_vec3' function");
+
+    let result = make_vec3.call(&mut store, (1, 2, 3)).unwrap();
+    let ptr = result as u32 as usize;
+
+    let memory = instance.get_memory(&mut store, "memory")
+        .expect("Failed to get memory");
+    let data = memory.data(&store);
+    let x = i64::from_le_bytes(data[ptr..ptr+8].try_into().unwrap());
+    let y = i64::from_le_bytes(data[ptr+8..ptr+16].try_into().unwrap());
+    let z = i64::from_le_bytes(data[ptr+16..ptr+24].try_into().unwrap());
+    assert_eq!(x, 1);
+    assert_eq!(y, 2);
+    assert_eq!(z, 3);
+}
+
+#[test]
+fn test_compile_struct_field_access() {
+    let source = r#"
+snippet id="types.Point" kind="struct"
+signature
+  struct name="Point"
+    field name="x" type="Int"
+    field name="y" type="Int"
+  end
+end
+end
+
+snippet id="test.get_x" kind="fn"
+signature
+  fn name="get_x"
+    param name="px" type="Int"
+    param name="py" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="construct"
+    type="Point"
+    field name="x" from="px"
+    field name="y" from="py"
+    as="point"
+  end
+  step id="s2" kind="bind"
+    field="x" of="point"
+    as="result"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+
+snippet id="test.get_y" kind="fn"
+signature
+  fn name="get_y"
+    param name="px" type="Int"
+    param name="py" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="construct"
+    type="Point"
+    field name="x" from="px"
+    field name="y" from="py"
+    as="point"
+  end
+  step id="s2" kind="bind"
+    field="y" of="point"
+    as="result"
+  end
+  step id="s3" kind="return"
+    from="result"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+
+    let get_x = instance
+        .get_typed_func::<(i64, i64), i64>(&mut store, "get_x")
+        .expect("Failed to get 'get_x' function");
+    let get_y = instance
+        .get_typed_func::<(i64, i64), i64>(&mut store, "get_y")
+        .expect("Failed to get 'get_y' function");
+
+    assert_eq!(get_x.call(&mut store, (42, 99)).unwrap(), 42);
+    assert_eq!(get_y.call(&mut store, (42, 99)).unwrap(), 99);
+    assert_eq!(get_x.call(&mut store, (0, -1)).unwrap(), 0);
+    assert_eq!(get_y.call(&mut store, (0, -1)).unwrap(), -1);
+}
+
+#[test]
+fn test_compile_struct_field_access_in_compute() {
+    let source = r#"
+snippet id="types.Point" kind="struct"
+signature
+  struct name="Point"
+    field name="x" type="Int"
+    field name="y" type="Int"
+  end
+end
+end
+
+snippet id="test.sum_fields" kind="fn"
+signature
+  fn name="sum_fields"
+    param name="px" type="Int"
+    param name="py" type="Int"
+    returns type="Int"
+  end
+end
+body
+  step id="s1" kind="construct"
+    type="Point"
+    field name="x" from="px"
+    field name="y" from="py"
+    as="point"
+  end
+  step id="s2" kind="compute"
+    op=add
+    input field="x" of="point"
+    input field="y" of="point"
+    as="sum"
+  end
+  step id="s3" kind="return"
+    from="sum"
+    as="_"
+  end
+end
+end
+"#;
+    let (mut store, instance) = compile_and_instantiate(source);
+    let sum_fields = instance
+        .get_typed_func::<(i64, i64), i64>(&mut store, "sum_fields")
+        .expect("Failed to get 'sum_fields' function");
+
+    assert_eq!(sum_fields.call(&mut store, (10, 20)).unwrap(), 30);
+    assert_eq!(sum_fields.call(&mut store, (100, 200)).unwrap(), 300);
+    assert_eq!(sum_fields.call(&mut store, (-5, 5)).unwrap(), 0);
 }
 
 // === Optional Type Tests (FAILS: Optional handling not implemented) ===
