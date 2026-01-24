@@ -2682,6 +2682,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Operation::Not)
             }
+            TokenKind::Contains => {
+                self.advance();
+                Ok(Operation::Contains)
+            }
             TokenKind::Ident => {
                 // Also support identifiers for extended operations
                 let op_name = self.consume_text(TokenKind::Ident)?;
@@ -4332,6 +4336,26 @@ impl<'a> Parser<'a> {
                 }
                 self.consume(TokenKind::RBracket)?;
                 contents.push(']');
+                Ok(Literal::String(contents))
+            }
+            TokenKind::LBrace => {
+                // Object/map literal - consume and represent as string for now
+                // {"key": "value"} or {}
+                let mut contents = String::from("{");
+                self.advance(); // consume {
+                while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+                    let text = self.advance_text();
+                    contents.push_str(&text);
+                    if self.at(TokenKind::Colon) {
+                        contents.push_str(": ");
+                        self.advance();
+                    } else if self.at(TokenKind::Comma) {
+                        contents.push_str(", ");
+                        self.advance();
+                    }
+                }
+                self.consume(TokenKind::RBrace)?;
+                contents.push('}');
                 Ok(Literal::String(contents))
             }
             _ => Err(ParseError::Unexpected {

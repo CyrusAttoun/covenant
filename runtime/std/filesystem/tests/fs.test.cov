@@ -1,0 +1,1481 @@
+// Filesystem Module Test Suite
+// Comprehensive unit tests for file and directory operations.
+// Tests cover: fs.read_file, fs.write_file, fs.write_bytes, fs.remove, fs.stat,
+//   fs.readDir, fs.exists, fs.mkdir, fs.copy, fs.rename, fs.chmod,
+//   fs.open, fs.read_bytes, fs.close
+// Test naming: T-FS-XXX | Requirements: R-FS-XXX
+// Note: All tests use ./covenant-test-temp/ directory and clean up after themselves.
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="fs_requirements" kind="data"
+
+requires
+  // Core Read/Write
+  req id="R-FS-001"
+    text "read_file() reads text file contents correctly"
+    priority critical
+  end
+
+  req id="R-FS-002"
+    text "read_file() returns IoError for non-existent files"
+    priority critical
+  end
+
+  req id="R-FS-003"
+    text "write_file() creates a new file with specified content"
+    priority critical
+  end
+
+  req id="R-FS-004"
+    text "write_file() overwrites existing file content"
+    priority critical
+  end
+
+  req id="R-FS-005"
+    text "write_bytes() writes binary data to file"
+    priority high
+  end
+
+  // File Management
+  req id="R-FS-006"
+    text "remove() deletes a file"
+    priority critical
+  end
+
+  req id="R-FS-007"
+    text "exists() returns true for existing paths"
+    priority critical
+  end
+
+  req id="R-FS-008"
+    text "exists() returns false for non-existent paths"
+    priority critical
+  end
+
+  req id="R-FS-009"
+    text "copy() duplicates a file to a new path"
+    priority high
+  end
+
+  req id="R-FS-010"
+    text "rename() moves/renames a file"
+    priority high
+  end
+
+  // Directory Operations
+  req id="R-FS-011"
+    text "mkdir() creates a new directory"
+    priority critical
+  end
+
+  req id="R-FS-012"
+    text "mkdir() with recursive=true creates nested directories"
+    priority high
+  end
+
+  req id="R-FS-013"
+    text "readDir() lists directory contents as DirEntry list"
+    priority high
+  end
+
+  // Metadata
+  req id="R-FS-014"
+    text "stat() returns FileStat with correct is_file and is_directory flags"
+    priority high
+  end
+
+  req id="R-FS-015"
+    text "stat() returns FileStat with size field"
+    priority high
+  end
+
+  // Streaming I/O
+  req id="R-FS-016"
+    text "open()/read_bytes()/close() supports streaming file reads"
+    priority high
+  end
+
+  // Permissions
+  req id="R-FS-017"
+    text "chmod() changes file permissions"
+    priority medium
+  end
+
+  // Error Cases
+  req id="R-FS-020"
+    text "write_file() to invalid path returns IoError"
+    priority high
+  end
+
+  req id="R-FS-021"
+    text "remove() on non-existent file returns IoError"
+    priority medium
+  end
+
+  // Edge Cases
+  req id="R-FS-030"
+    text "Empty file can be written and read"
+    priority medium
+  end
+
+  req id="R-FS-031"
+    text "Files with unicode content are preserved"
+    priority medium
+  end
+
+  req id="R-FS-032"
+    text "readDir() on empty directory returns empty list"
+    priority medium
+  end
+
+  req id="R-FS-033"
+    text "stat() on directory returns is_directory=true"
+    priority medium
+  end
+
+  req id="R-FS-034"
+    text "read_bytes() with offset and length reads partial content"
+    priority medium
+  end
+
+  req id="R-FS-035"
+    text "copy() preserves file content exactly"
+    priority high
+  end
+
+  req id="R-FS-036"
+    text "rename() removes original file"
+    priority high
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="fs_tests" kind="test"
+
+effects
+  effect filesystem
+end
+
+tests
+  // ==========================================
+  // Write/Read Tests
+  // ==========================================
+
+  test id="T-FS-001" kind="unit" covers="R-FS-003,R-FS-001"
+    // write then read returns same content
+    step id="s1" kind="call"
+      fn="fs.mkdir"
+      arg name="path" lit="./covenant-test-temp"
+      arg name="recursive" lit=true
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/test-001.txt"
+      arg name="content" lit="Hello, Covenant!"
+      as="write_result"
+    end
+
+    step id="s3" kind="match"
+      on="write_result"
+
+      case variant type="Unit"
+        step id="s3a" kind="bind"
+          lit=true
+          as="write_ok"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3b" kind="bind"
+          lit=false
+          as="write_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="fs.read_file"
+      arg name="path" lit="./covenant-test-temp/test-001.txt"
+      as="read_result"
+    end
+
+    step id="s5" kind="match"
+      on="read_result"
+
+      case variant type="String" bindings=("content")
+        step id="s5a" kind="compute"
+          op=equals
+          input var="content"
+          input lit="Hello, Covenant!"
+          as="content_matches"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s5b" kind="bind"
+          lit=false
+          as="content_matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s6" kind="compute"
+      op=and
+      input var="write_ok"
+      input var="content_matches"
+      as="all_ok"
+    end
+
+    step id="s7" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="all_ok"
+      arg name="message" lit="write_file then read_file should return same content"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s8" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/test-001.txt"
+      as="_"
+    end
+  end
+
+  test id="T-FS-002" kind="unit" covers="R-FS-002"
+    // read non-existent file returns IoError
+    step id="s1" kind="call"
+      fn="fs.read_file"
+      arg name="path" lit="./covenant-test-temp/nonexistent-file-xyz-99999.txt"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="IoError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="read_file on non-existent file should return IoError"
+      as="_"
+    end
+  end
+
+  test id="T-FS-003" kind="unit" covers="R-FS-004"
+    // write_file overwrites existing content
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/overwrite-test.txt"
+      arg name="content" lit="original content"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/overwrite-test.txt"
+      arg name="content" lit="updated content"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="fs.read_file"
+      arg name="path" lit="./covenant-test-temp/overwrite-test.txt"
+      as="result"
+    end
+
+    step id="s4" kind="match"
+      on="result"
+
+      case variant type="String" bindings=("content")
+        step id="s4a" kind="compute"
+          op=equals
+          input var="content"
+          input lit="updated content"
+          as="is_updated"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s4b" kind="bind"
+          lit=false
+          as="is_updated"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_updated"
+      arg name="message" lit="write_file should overwrite existing content"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s6" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/overwrite-test.txt"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // exists() Tests
+  // ==========================================
+
+  test id="T-FS-004" kind="unit" covers="R-FS-007"
+    // exists returns true for existing file
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/exists-test.txt"
+      arg name="content" lit="I exist"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/exists-test.txt"
+      as="result"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="result"
+      arg name="message" lit="exists should return true for existing file"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s4" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/exists-test.txt"
+      as="_"
+    end
+  end
+
+  test id="T-FS-005" kind="unit" covers="R-FS-008"
+    // exists returns false for non-existent path
+    step id="s1" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/does-not-exist-xyz-99999.txt"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=not
+      input var="result"
+      as="is_false"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_false"
+      arg name="message" lit="exists should return false for non-existent path"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // remove() Tests
+  // ==========================================
+
+  test id="T-FS-006" kind="unit" covers="R-FS-006"
+    // remove deletes file
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/remove-test.txt"
+      arg name="content" lit="to be removed"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/remove-test.txt"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/remove-test.txt"
+      as="still_exists"
+    end
+
+    step id="s4" kind="compute"
+      op=not
+      input var="still_exists"
+      as="is_removed"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_removed"
+      arg name="message" lit="file should not exist after remove()"
+      as="_"
+    end
+  end
+
+  test id="T-FS-007" kind="unit" covers="R-FS-021"
+    // remove non-existent file returns IoError
+    step id="s1" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/nonexistent-remove-xyz-99999.txt"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="IoError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="remove on non-existent file should return IoError"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // mkdir() Tests
+  // ==========================================
+
+  test id="T-FS-008" kind="unit" covers="R-FS-011"
+    // mkdir creates directory
+    step id="s1" kind="call"
+      fn="fs.mkdir"
+      arg name="path" lit="./covenant-test-temp/new-dir-test"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/new-dir-test"
+      as="dir_exists"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="dir_exists"
+      arg name="message" lit="mkdir should create directory"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s4" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/new-dir-test"
+      as="_"
+    end
+  end
+
+  test id="T-FS-009" kind="unit" covers="R-FS-012"
+    // mkdir with recursive creates nested directories
+    step id="s1" kind="call"
+      fn="fs.mkdir"
+      arg name="path" lit="./covenant-test-temp/nested/deep/dir"
+      arg name="recursive" lit=true
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/nested/deep/dir"
+      as="dir_exists"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="dir_exists"
+      arg name="message" lit="mkdir recursive should create nested directories"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s4" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/nested/deep/dir"
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/nested/deep"
+      as="_"
+    end
+
+    step id="s6" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/nested"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // readDir() Tests
+  // ==========================================
+
+  test id="T-FS-010" kind="unit" covers="R-FS-013"
+    // readDir lists directory contents
+    step id="s1" kind="call"
+      fn="fs.mkdir"
+      arg name="path" lit="./covenant-test-temp/readdir-test"
+      arg name="recursive" lit=true
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/readdir-test/file-a.txt"
+      arg name="content" lit="a"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/readdir-test/file-b.txt"
+      arg name="content" lit="b"
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="fs.readDir"
+      arg name="path" lit="./covenant-test-temp/readdir-test"
+      as="result"
+    end
+
+    step id="s5" kind="match"
+      on="result"
+
+      case variant type="List" bindings=("entries")
+        step id="s5a" kind="compute"
+          op=list_len
+          input var="entries"
+          as="count"
+        end
+        step id="s5b" kind="compute"
+          op=equals
+          input var="count"
+          input lit=2
+          as="has_two"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s5c" kind="bind"
+          lit=false
+          as="has_two"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_two"
+      arg name="message" lit="readDir should list 2 files in directory"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s7" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/readdir-test/file-a.txt"
+      as="_"
+    end
+
+    step id="s8" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/readdir-test/file-b.txt"
+      as="_"
+    end
+
+    step id="s9" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/readdir-test"
+      as="_"
+    end
+  end
+
+  test id="T-FS-011" kind="unit" covers="R-FS-032"
+    // readDir on empty directory returns empty list
+    step id="s1" kind="call"
+      fn="fs.mkdir"
+      arg name="path" lit="./covenant-test-temp/empty-dir-test"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.readDir"
+      arg name="path" lit="./covenant-test-temp/empty-dir-test"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="List" bindings=("entries")
+        step id="s3a" kind="compute"
+          op=list_len
+          input var="entries"
+          as="count"
+        end
+        step id="s3b" kind="compute"
+          op=equals
+          input var="count"
+          input lit=0
+          as="is_empty"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3c" kind="bind"
+          lit=false
+          as="is_empty"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_empty"
+      arg name="message" lit="readDir on empty directory should return empty list"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/empty-dir-test"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // stat() Tests
+  // ==========================================
+
+  test id="T-FS-012" kind="unit" covers="R-FS-014"
+    // stat on file returns is_file=true
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/stat-test.txt"
+      arg name="content" lit="stat test content"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.stat"
+      arg name="path" lit="./covenant-test-temp/stat-test.txt"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="FileStat" bindings=("s")
+        step id="s3a" kind="compute"
+          op=equals
+          input field="is_file" of="s"
+          input lit=true
+          as="is_file"
+        end
+        step id="s3b" kind="compute"
+          op=equals
+          input field="is_directory" of="s"
+          input lit=false
+          as="not_dir"
+        end
+        step id="s3c" kind="compute"
+          op=and
+          input var="is_file"
+          input var="not_dir"
+          as="stat_ok"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3d" kind="bind"
+          lit=false
+          as="stat_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="stat_ok"
+      arg name="message" lit="stat on file should have is_file=true, is_directory=false"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/stat-test.txt"
+      as="_"
+    end
+  end
+
+  test id="T-FS-013" kind="unit" covers="R-FS-033"
+    // stat on directory returns is_directory=true
+    step id="s1" kind="call"
+      fn="fs.mkdir"
+      arg name="path" lit="./covenant-test-temp/stat-dir-test"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.stat"
+      arg name="path" lit="./covenant-test-temp/stat-dir-test"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="FileStat" bindings=("s")
+        step id="s3a" kind="compute"
+          op=equals
+          input field="is_directory" of="s"
+          input lit=true
+          as="is_dir"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3b" kind="bind"
+          lit=false
+          as="is_dir"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_dir"
+      arg name="message" lit="stat on directory should have is_directory=true"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/stat-dir-test"
+      as="_"
+    end
+  end
+
+  test id="T-FS-014" kind="unit" covers="R-FS-015"
+    // stat returns size field
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/size-test.txt"
+      arg name="content" lit="12345"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.stat"
+      arg name="path" lit="./covenant-test-temp/size-test.txt"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="FileStat" bindings=("s")
+        step id="s3a" kind="compute"
+          op=greater
+          input field="size" of="s"
+          input lit=0
+          as="has_size"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3b" kind="bind"
+          lit=false
+          as="has_size"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_size"
+      arg name="message" lit="stat should return positive size for non-empty file"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/size-test.txt"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // copy() Tests
+  // ==========================================
+
+  test id="T-FS-015" kind="unit" covers="R-FS-009,R-FS-035"
+    // copy duplicates file with same content
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/copy-source.txt"
+      arg name="content" lit="content to copy"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.copy"
+      arg name="src" lit="./covenant-test-temp/copy-source.txt"
+      arg name="dest" lit="./covenant-test-temp/copy-dest.txt"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="fs.read_file"
+      arg name="path" lit="./covenant-test-temp/copy-dest.txt"
+      as="result"
+    end
+
+    step id="s4" kind="match"
+      on="result"
+
+      case variant type="String" bindings=("content")
+        step id="s4a" kind="compute"
+          op=equals
+          input var="content"
+          input lit="content to copy"
+          as="content_matches"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s4b" kind="bind"
+          lit=false
+          as="content_matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="content_matches"
+      arg name="message" lit="copy should preserve file content exactly"
+      as="_"
+    end
+
+    // Verify source still exists
+    step id="s6" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/copy-source.txt"
+      as="source_exists"
+    end
+
+    step id="s7" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="source_exists"
+      arg name="message" lit="copy should not remove source file"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s8" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/copy-source.txt"
+      as="_"
+    end
+
+    step id="s9" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/copy-dest.txt"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // rename() Tests
+  // ==========================================
+
+  test id="T-FS-016" kind="unit" covers="R-FS-010,R-FS-036"
+    // rename moves file and removes original
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/rename-source.txt"
+      arg name="content" lit="rename me"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.rename"
+      arg name="src" lit="./covenant-test-temp/rename-source.txt"
+      arg name="dest" lit="./covenant-test-temp/rename-dest.txt"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/rename-source.txt"
+      as="source_exists"
+    end
+
+    step id="s4" kind="compute"
+      op=not
+      input var="source_exists"
+      as="source_gone"
+    end
+
+    step id="s5" kind="call"
+      fn="fs.read_file"
+      arg name="path" lit="./covenant-test-temp/rename-dest.txt"
+      as="result"
+    end
+
+    step id="s6" kind="match"
+      on="result"
+
+      case variant type="String" bindings=("content")
+        step id="s6a" kind="compute"
+          op=equals
+          input var="content"
+          input lit="rename me"
+          as="content_ok"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s6b" kind="bind"
+          lit=false
+          as="content_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s7" kind="compute"
+      op=and
+      input var="source_gone"
+      input var="content_ok"
+      as="rename_ok"
+    end
+
+    step id="s8" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="rename_ok"
+      arg name="message" lit="rename should move content and remove original"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s9" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/rename-dest.txt"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // chmod() Test
+  // ==========================================
+
+  test id="T-FS-017" kind="unit" covers="R-FS-017"
+    // chmod changes permissions without error
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/chmod-test.txt"
+      arg name="content" lit="chmod test"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.chmod"
+      arg name="path" lit="./covenant-test-temp/chmod-test.txt"
+      arg name="mode" lit=755
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Unit"
+        step id="s3a" kind="bind"
+          lit=true
+          as="chmod_ok"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3b" kind="bind"
+          lit=false
+          as="chmod_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="chmod_ok"
+      arg name="message" lit="chmod should complete without error"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/chmod-test.txt"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Streaming I/O Tests
+  // ==========================================
+
+  test id="T-FS-018" kind="unit" covers="R-FS-016"
+    // open, read_bytes, close for streaming
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/stream-test.txt"
+      arg name="content" lit="streaming content for partial reads"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.open"
+      arg name="path" lit="./covenant-test-temp/stream-test.txt"
+      arg name="mode" lit="read"
+      as="handle_result"
+    end
+
+    step id="s3" kind="match"
+      on="handle_result"
+
+      case variant type="FileHandle" bindings=("h")
+        step id="s3a" kind="call"
+          fn="fs.read_bytes"
+          arg name="handle" from="h"
+          arg name="offset" lit=0
+          arg name="length" lit=9
+          as="chunk_result"
+        end
+        step id="s3b" kind="match"
+          on="chunk_result"
+
+          case variant type="Bytes" bindings=("data")
+            step id="s3b1" kind="compute"
+              op=byte_len
+              input var="data"
+              as="chunk_len"
+            end
+            step id="s3b2" kind="compute"
+              op=equals
+              input var="chunk_len"
+              input lit=9
+              as="stream_ok"
+            end
+          end
+
+          case variant type="IoError" bindings=("e")
+            step id="s3b3" kind="bind"
+              lit=false
+              as="stream_ok"
+            end
+          end
+
+          as="_"
+        end
+        step id="s3c" kind="call"
+          fn="fs.close"
+          arg name="handle" from="h"
+          as="_"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3d" kind="bind"
+          lit=false
+          as="stream_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="stream_ok"
+      arg name="message" lit="open/read_bytes/close should read partial file content"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/stream-test.txt"
+      as="_"
+    end
+  end
+
+  test id="T-FS-019" kind="unit" covers="R-FS-034"
+    // read_bytes with offset reads from position
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/offset-test.txt"
+      arg name="content" lit="0123456789abcdef"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.open"
+      arg name="path" lit="./covenant-test-temp/offset-test.txt"
+      arg name="mode" lit="read"
+      as="handle_result"
+    end
+
+    step id="s3" kind="match"
+      on="handle_result"
+
+      case variant type="FileHandle" bindings=("h")
+        step id="s3a" kind="call"
+          fn="fs.read_bytes"
+          arg name="handle" from="h"
+          arg name="offset" lit=10
+          arg name="length" lit=6
+          as="chunk_result"
+        end
+        step id="s3b" kind="match"
+          on="chunk_result"
+
+          case variant type="Bytes" bindings=("data")
+            step id="s3b1" kind="compute"
+              op=byte_len
+              input var="data"
+              as="chunk_len"
+            end
+            step id="s3b2" kind="compute"
+              op=equals
+              input var="chunk_len"
+              input lit=6
+              as="offset_ok"
+            end
+          end
+
+          case variant type="IoError" bindings=("e")
+            step id="s3b3" kind="bind"
+              lit=false
+              as="offset_ok"
+            end
+          end
+
+          as="_"
+        end
+        step id="s3c" kind="call"
+          fn="fs.close"
+          arg name="handle" from="h"
+          as="_"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3d" kind="bind"
+          lit=false
+          as="offset_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="offset_ok"
+      arg name="message" lit="read_bytes with offset should read from correct position"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/offset-test.txt"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // write_bytes() Test
+  // ==========================================
+
+  test id="T-FS-020" kind="unit" covers="R-FS-005"
+    // write_bytes writes binary data
+    step id="s1" kind="call"
+      fn="crypto.random_bytes"
+      arg name="length" lit=16
+      as="binary_data"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.write_bytes"
+      arg name="path" lit="./covenant-test-temp/binary-test.bin"
+      arg name="content" from="binary_data"
+      as="write_result"
+    end
+
+    step id="s3" kind="match"
+      on="write_result"
+
+      case variant type="Unit"
+        step id="s3a" kind="bind"
+          lit=true
+          as="write_ok"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3b" kind="bind"
+          lit=false
+          as="write_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="fs.exists"
+      arg name="path" lit="./covenant-test-temp/binary-test.bin"
+      as="file_exists"
+    end
+
+    step id="s5" kind="compute"
+      op=and
+      input var="write_ok"
+      input var="file_exists"
+      as="all_ok"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="all_ok"
+      arg name="message" lit="write_bytes should create file with binary data"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s7" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/binary-test.bin"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Edge Cases
+  // ==========================================
+
+  test id="T-FS-021" kind="unit" covers="R-FS-030"
+    // empty file write and read
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/empty-file.txt"
+      arg name="content" lit=""
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.read_file"
+      arg name="path" lit="./covenant-test-temp/empty-file.txt"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="String" bindings=("content")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="content"
+          input lit=""
+          as="is_empty"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3b" kind="bind"
+          lit=false
+          as="is_empty"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_empty"
+      arg name="message" lit="empty file should be writable and readable"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/empty-file.txt"
+      as="_"
+    end
+  end
+
+  test id="T-FS-022" kind="unit" covers="R-FS-031"
+    // unicode content is preserved
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./covenant-test-temp/unicode-content.txt"
+      arg name="content" lit="\u{4E16}\u{754C}\u{1F600} Hello \u{2603}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="fs.read_file"
+      arg name="path" lit="./covenant-test-temp/unicode-content.txt"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="String" bindings=("content")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="content"
+          input lit="\u{4E16}\u{754C}\u{1F600} Hello \u{2603}"
+          as="unicode_ok"
+        end
+      end
+
+      case variant type="IoError" bindings=("e")
+        step id="s3b" kind="bind"
+          lit=false
+          as="unicode_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="unicode_ok"
+      arg name="message" lit="unicode file content should be preserved"
+      as="_"
+    end
+
+    // Cleanup
+    step id="s5" kind="call"
+      fn="fs.remove"
+      arg name="path" lit="./covenant-test-temp/unicode-content.txt"
+      as="_"
+    end
+  end
+
+  test id="T-FS-023" kind="unit" covers="R-FS-020"
+    // write to invalid path returns IoError
+    step id="s1" kind="call"
+      fn="fs.write_file"
+      arg name="path" lit="./nonexistent-parent-dir-xyz-99999/file.txt"
+      arg name="content" lit="should fail"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="IoError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="write_file to invalid path should return IoError"
+      as="_"
+    end
+  end
+
+end
+
+end

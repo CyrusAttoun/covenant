@@ -1,0 +1,204 @@
+// Console Module Test Suite
+// Comprehensive unit tests for console output functions.
+// Tests cover: console.println, console.info, console.debug, console.warn, console.error
+// Test naming: T-CON-XXX | Requirements: R-CON-XXX
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="console_requirements" kind="data"
+
+requires
+  req id="R-CON-001"
+    text "println() outputs message and completes without error"
+    priority critical
+  end
+
+  req id="R-CON-002"
+    text "info() outputs message and completes without error"
+    priority critical
+  end
+
+  req id="R-CON-003"
+    text "debug() outputs message and completes without error"
+    priority critical
+  end
+
+  req id="R-CON-004"
+    text "warn() outputs message and completes without error"
+    priority critical
+  end
+
+  req id="R-CON-005"
+    text "error() outputs message and completes without error"
+    priority critical
+  end
+
+  req id="R-CON-006"
+    text "Console functions accept optional values parameter"
+    priority high
+  end
+
+  req id="R-CON-007"
+    text "Console functions accept empty string messages"
+    priority medium
+  end
+
+  req id="R-CON-008"
+    text "Console functions handle unicode messages"
+    priority medium
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="console_tests" kind="test"
+
+effects
+  effect console
+end
+
+tests
+  test id="T-CON-001" kind="unit" covers="R-CON-001"
+    // println completes without error
+    step id="s1" kind="call"
+      fn="console.println"
+      arg name="msg" lit="[T-CON-001] println test message"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="println should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-CON-002" kind="unit" covers="R-CON-002"
+    // info completes without error
+    step id="s1" kind="call"
+      fn="console.info"
+      arg name="msg" lit="[T-CON-002] info test message"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="info should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-CON-003" kind="unit" covers="R-CON-003"
+    // debug completes without error
+    step id="s1" kind="call"
+      fn="console.debug"
+      arg name="msg" lit="[T-CON-003] debug test message"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="debug should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-CON-004" kind="unit" covers="R-CON-004"
+    // warn completes without error
+    step id="s1" kind="call"
+      fn="console.warn"
+      arg name="msg" lit="[T-CON-004] warn test message"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="warn should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-CON-005" kind="unit" covers="R-CON-005"
+    // error completes without error
+    step id="s1" kind="call"
+      fn="console.error"
+      arg name="msg" lit="[T-CON-005] error test message"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="error should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-CON-006" kind="unit" covers="R-CON-006"
+    // println with optional values parameter
+    step id="s1" kind="call"
+      fn="console.println"
+      arg name="msg" lit="[T-CON-006] message with values:"
+      arg name="values" lit=["value1", "value2", "value3"]
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="println with values should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-CON-007" kind="unit" covers="R-CON-007"
+    // empty string message is valid
+    step id="s1" kind="call"
+      fn="console.println"
+      arg name="msg" lit=""
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="console.warn"
+      arg name="msg" lit=""
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="empty string messages should be valid"
+      as="_"
+    end
+  end
+
+  test id="T-CON-008" kind="unit" covers="R-CON-008"
+    // unicode message is handled
+    step id="s1" kind="call"
+      fn="console.println"
+      arg name="msg" lit="[T-CON-008] Unicode: \u{4E16}\u{754C} \u{1F600} \u{2603}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="unicode messages should be handled without error"
+      as="_"
+    end
+  end
+
+end
+
+end

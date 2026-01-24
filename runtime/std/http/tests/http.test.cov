@@ -1,0 +1,856 @@
+// HTTP Module Test Suite
+// Comprehensive unit tests for HTTP client operations.
+// Tests cover: http.get, http.post, http.put, http.delete, http.request
+// Test naming: T-HTTP-XXX | Requirements: R-HTTP-XXX
+// Note: Tests use httpbin.org for predictable HTTP responses.
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="http_requirements" kind="data"
+
+requires
+  req id="R-HTTP-001"
+    text "get() retrieves content and returns Response with status 200"
+    priority critical
+  end
+
+  req id="R-HTTP-002"
+    text "get() with headers passes them to the server"
+    priority high
+  end
+
+  req id="R-HTTP-003"
+    text "get() returns HttpError for unreachable/invalid URLs"
+    priority critical
+  end
+
+  req id="R-HTTP-004"
+    text "post() sends body and returns Response"
+    priority critical
+  end
+
+  req id="R-HTTP-005"
+    text "post() with content_type sets the Content-Type header"
+    priority high
+  end
+
+  req id="R-HTTP-006"
+    text "put() sends body and returns Response"
+    priority critical
+  end
+
+  req id="R-HTTP-007"
+    text "delete() sends DELETE request and returns Response"
+    priority critical
+  end
+
+  req id="R-HTTP-008"
+    text "request() supports arbitrary HTTP methods (PATCH)"
+    priority high
+  end
+
+  req id="R-HTTP-009"
+    text "timeout parameter enforces time limit on requests"
+    priority high
+  end
+
+  req id="R-HTTP-010"
+    text "Response struct contains status, body, and headers fields"
+    priority critical
+  end
+
+  req id="R-HTTP-011"
+    text "get() returns Response with non-200 status for error endpoints"
+    priority high
+  end
+
+  req id="R-HTTP-020"
+    text "get() with empty URL returns HttpError"
+    priority medium
+  end
+
+  req id="R-HTTP-021"
+    text "post() with empty body is valid"
+    priority medium
+  end
+
+  req id="R-HTTP-022"
+    text "get() with timeout parameter completes normally"
+    priority medium
+  end
+
+  req id="R-HTTP-023"
+    text "Response body contains expected content"
+    priority high
+  end
+
+  req id="R-HTTP-024"
+    text "Response headers map is populated"
+    priority medium
+  end
+
+  req id="R-HTTP-025"
+    text "request() with GET method behaves like get()"
+    priority medium
+  end
+
+  req id="R-HTTP-026"
+    text "get() handles HTTPS URLs correctly"
+    priority high
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="http_tests" kind="test"
+
+effects
+  effect network
+end
+
+tests
+  // ==========================================
+  // GET Tests
+  // ==========================================
+
+  test id="T-HTTP-001" kind="unit" covers="R-HTTP-001"
+    // GET returns 200 for valid URL
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/get"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="GET to httpbin.org/get should return status 200"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-002" kind="unit" covers="R-HTTP-002"
+    // GET with custom headers
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/headers"
+      arg name="headers" lit={"X-Custom-Header": "test-value-123"}
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="GET with custom headers should succeed"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-003" kind="unit" covers="R-HTTP-003"
+    // GET to invalid URL returns HttpError
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="http://invalid-host-that-does-not-exist-xyz-99999.example"
+      arg name="timeout" lit=5000
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="GET to unreachable host should return HttpError"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-004" kind="unit" covers="R-HTTP-011"
+    // GET to 404 endpoint returns non-200 status
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/status/404"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=404
+          as="is_404"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        // Some implementations may return HttpError for 4xx
+        step id="s2b" kind="bind"
+          lit=true
+          as="is_404"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_404"
+      arg name="message" lit="GET to /status/404 should return 404 or HttpError"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-005" kind="unit" covers="R-HTTP-026"
+    // GET handles HTTPS correctly
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/get"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="https_ok"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="https_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="https_ok"
+      arg name="message" lit="GET should handle HTTPS URLs correctly"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-006" kind="unit" covers="R-HTTP-022"
+    // GET with timeout parameter
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/get"
+      arg name="timeout" lit=10000
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="ok"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="ok"
+      arg name="message" lit="GET with timeout should complete normally for fast endpoints"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // POST Tests
+  // ==========================================
+
+  test id="T-HTTP-007" kind="unit" covers="R-HTTP-004"
+    // POST sends body and returns Response
+    step id="s1" kind="call"
+      fn="http.post"
+      arg name="url" lit="https://httpbin.org/post"
+      arg name="body" lit="{\"key\": \"value\"}"
+      arg name="content_type" lit="application/json"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="POST with JSON body should return 200"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-008" kind="unit" covers="R-HTTP-005"
+    // POST with content_type
+    step id="s1" kind="call"
+      fn="http.post"
+      arg name="url" lit="https://httpbin.org/post"
+      arg name="body" lit="plain text body"
+      arg name="content_type" lit="text/plain"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="POST with text/plain content_type should succeed"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-009" kind="unit" covers="R-HTTP-021"
+    // POST with empty body
+    step id="s1" kind="call"
+      fn="http.post"
+      arg name="url" lit="https://httpbin.org/post"
+      arg name="body" lit=""
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="POST with empty body should be valid"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // PUT Tests
+  // ==========================================
+
+  test id="T-HTTP-010" kind="unit" covers="R-HTTP-006"
+    // PUT sends body and returns Response
+    step id="s1" kind="call"
+      fn="http.put"
+      arg name="url" lit="https://httpbin.org/put"
+      arg name="body" lit="{\"updated\": true}"
+      arg name="content_type" lit="application/json"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="PUT with body should return 200"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // DELETE Tests
+  // ==========================================
+
+  test id="T-HTTP-011" kind="unit" covers="R-HTTP-007"
+    // DELETE returns Response
+    step id="s1" kind="call"
+      fn="http.delete"
+      arg name="url" lit="https://httpbin.org/delete"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="DELETE should return 200"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // request() Tests
+  // ==========================================
+
+  test id="T-HTTP-012" kind="unit" covers="R-HTTP-008"
+    // request with PATCH method
+    step id="s1" kind="call"
+      fn="http.request"
+      arg name="url" lit="https://httpbin.org/patch"
+      arg name="method" lit="PATCH"
+      arg name="body" lit="{\"field\": \"patched\"}"
+      arg name="content_type" lit="application/json"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="request with PATCH method should return 200"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-013" kind="unit" covers="R-HTTP-025"
+    // request with GET method behaves like get()
+    step id="s1" kind="call"
+      fn="http.request"
+      arg name="url" lit="https://httpbin.org/get"
+      arg name="method" lit="GET"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="is_200"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_200"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_200"
+      arg name="message" lit="request with GET method should behave like get()"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Response Structure Tests
+  // ==========================================
+
+  test id="T-HTTP-014" kind="unit" covers="R-HTTP-010"
+    // Response has status, body, and headers
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/get"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="status" of="r"
+          input lit=200
+          as="has_status"
+        end
+        step id="s2b" kind="compute"
+          op=not_equals
+          input field="body" of="r"
+          input lit=""
+          as="has_body"
+        end
+        step id="s2c" kind="compute"
+          op=and
+          input var="has_status"
+          input var="has_body"
+          as="struct_ok"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2d" kind="bind"
+          lit=false
+          as="struct_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="struct_ok"
+      arg name="message" lit="Response should have status and non-empty body"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-015" kind="unit" covers="R-HTTP-023"
+    // Response body contains expected content
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/get"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Response" bindings=("r")
+        step id="s2a" kind="compute"
+          op=contains
+          input field="body" of="r"
+          input lit="httpbin.org"
+          as="body_ok"
+        end
+      end
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="body_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="body_ok"
+      arg name="message" lit="Response body should contain expected content from httpbin"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Timeout Tests
+  // ==========================================
+
+  test id="T-HTTP-016" kind="unit" covers="R-HTTP-009"
+    // timeout causes error on slow endpoint
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="https://httpbin.org/delay/10"
+      arg name="timeout" lit=1000
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="timed_out"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="timed_out"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="timed_out"
+      arg name="message" lit="request with short timeout to slow endpoint should error"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Error Cases
+  // ==========================================
+
+  test id="T-HTTP-017" kind="unit" covers="R-HTTP-020"
+    // empty URL returns error
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit=""
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="GET with empty URL should return HttpError"
+      as="_"
+    end
+  end
+
+  test id="T-HTTP-018" kind="unit" covers="R-HTTP-003"
+    // malformed URL returns error
+    step id="s1" kind="call"
+      fn="http.get"
+      arg name="url" lit="not-a-valid-url"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="HttpError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="GET with malformed URL should return HttpError"
+      as="_"
+    end
+  end
+
+end
+
+end

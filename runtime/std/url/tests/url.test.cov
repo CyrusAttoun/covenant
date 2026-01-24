@@ -1,0 +1,524 @@
+// URL Module Test Suite
+// Comprehensive unit tests for URL parsing, formatting, and resolution.
+// Tests cover: url.parse, url.format, url.resolve
+// Test naming: T-URL-XXX | Requirements: R-URL-XXX
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="url_requirements" kind="data"
+
+requires
+  req id="R-URL-001"
+    text "parse() extracts protocol, host, port, pathname, search, hash from valid URL"
+    priority critical
+  end
+
+  req id="R-URL-002"
+    text "parse() returns UrlError for invalid URLs"
+    priority critical
+  end
+
+  req id="R-URL-003"
+    text "format() reconstructs a URL string from a Url struct"
+    priority critical
+  end
+
+  req id="R-URL-004"
+    text "resolve() resolves relative URLs against a base URL"
+    priority critical
+  end
+
+  req id="R-URL-010"
+    text "parse() handles URLs without port (port is optional)"
+    priority high
+  end
+
+  req id="R-URL-011"
+    text "parse() handles URLs without query or hash"
+    priority high
+  end
+
+  req id="R-URL-012"
+    text "parse() handles URLs with special characters in query"
+    priority medium
+  end
+
+  req id="R-URL-013"
+    text "resolve() handles parent directory references (..)"
+    priority high
+  end
+
+  req id="R-URL-014"
+    text "parse() returns empty string for invalid input"
+    priority medium
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="url_tests" kind="test"
+
+tests
+  // ==========================================
+  // parse() Tests
+  // ==========================================
+
+  test id="T-URL-001" kind="unit" covers="R-URL-001"
+    // parse complete URL with all components
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit="https://api.example.com:8080/v2/users?active=true#top"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Url" bindings=("u")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="protocol" of="u"
+          input lit="https"
+          as="proto_ok"
+        end
+        step id="s2b" kind="compute"
+          op=equals
+          input field="host" of="u"
+          input lit="api.example.com"
+          as="host_ok"
+        end
+        step id="s2c" kind="compute"
+          op=equals
+          input field="port" of="u"
+          input lit=8080
+          as="port_ok"
+        end
+        step id="s2d" kind="compute"
+          op=equals
+          input field="pathname" of="u"
+          input lit="/v2/users"
+          as="path_ok"
+        end
+        step id="s2e" kind="compute"
+          op=and
+          input var="proto_ok"
+          input var="host_ok"
+          as="t1"
+        end
+        step id="s2f" kind="compute"
+          op=and
+          input var="t1"
+          input var="port_ok"
+          as="t2"
+        end
+        step id="s2g" kind="compute"
+          op=and
+          input var="t2"
+          input var="path_ok"
+          as="all_ok"
+        end
+      end
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2h" kind="bind"
+          lit=false
+          as="all_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="all_ok"
+      arg name="message" lit="parse should extract protocol, host, port, and pathname"
+      as="_"
+    end
+  end
+
+  test id="T-URL-002" kind="unit" covers="R-URL-010"
+    // parse URL without port
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit="https://example.com/path"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Url" bindings=("u")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="host" of="u"
+          input lit="example.com"
+          as="host_ok"
+        end
+      end
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="host_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="host_ok"
+      arg name="message" lit="parse should handle URL without port"
+      as="_"
+    end
+  end
+
+  test id="T-URL-003" kind="unit" covers="R-URL-011"
+    // parse URL without query or hash
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit="http://example.com/api/v1"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Url" bindings=("u")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="pathname" of="u"
+          input lit="/api/v1"
+          as="path_ok"
+        end
+      end
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="path_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="path_ok"
+      arg name="message" lit="parse should handle URL without query or hash"
+      as="_"
+    end
+  end
+
+  test id="T-URL-004" kind="unit" covers="R-URL-002"
+    // parse invalid URL returns UrlError
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit="not a valid url at all"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="parse should return UrlError for invalid URL"
+      as="_"
+    end
+  end
+
+  test id="T-URL-005" kind="unit" covers="R-URL-002"
+    // parse empty string returns UrlError
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit=""
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="parse should return UrlError for empty string"
+      as="_"
+    end
+  end
+
+  test id="T-URL-006" kind="unit" covers="R-URL-012"
+    // parse URL with special characters in query
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit="https://example.com/search?q=hello+world&lang=en"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="Url" bindings=("u")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="search" of="u"
+          input lit="?q=hello+world&lang=en"
+          as="search_ok"
+        end
+      end
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="search_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="search_ok"
+      arg name="message" lit="parse should preserve special characters in query string"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // format() Tests
+  // ==========================================
+
+  test id="T-URL-007" kind="unit" covers="R-URL-003"
+    // format reconstructs URL from parsed struct (round-trip)
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit="https://example.com:443/path"
+      as="parsed"
+    end
+
+    step id="s2" kind="match"
+      on="parsed"
+
+      case variant type="Url" bindings=("u")
+        step id="s2a" kind="call"
+          fn="url.format"
+          arg name="url" from="u"
+          as="formatted"
+        end
+        step id="s2b" kind="compute"
+          op=equals
+          input var="formatted"
+          input lit="https://example.com:443/path"
+          as="roundtrip_ok"
+        end
+      end
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2c" kind="bind"
+          lit=false
+          as="roundtrip_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="roundtrip_ok"
+      arg name="message" lit="format should reconstruct URL from parsed struct"
+      as="_"
+    end
+  end
+
+  test id="T-URL-008" kind="unit" covers="R-URL-003"
+    // format URL with query and hash
+    step id="s1" kind="call"
+      fn="url.parse"
+      arg name="raw" lit="https://example.com/page?key=val#section"
+      as="parsed"
+    end
+
+    step id="s2" kind="match"
+      on="parsed"
+
+      case variant type="Url" bindings=("u")
+        step id="s2a" kind="call"
+          fn="url.format"
+          arg name="url" from="u"
+          as="formatted"
+        end
+        step id="s2b" kind="compute"
+          op=equals
+          input var="formatted"
+          input lit="https://example.com/page?key=val#section"
+          as="roundtrip_ok"
+        end
+      end
+
+      case variant type="UrlError" bindings=("e")
+        step id="s2c" kind="bind"
+          lit=false
+          as="roundtrip_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="roundtrip_ok"
+      arg name="message" lit="format should preserve query and hash in round-trip"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // resolve() Tests
+  // ==========================================
+
+  test id="T-URL-009" kind="unit" covers="R-URL-004"
+    // resolve relative path
+    step id="s1" kind="call"
+      fn="url.resolve"
+      arg name="base" lit="https://example.com/api/v1/"
+      arg name="relative" lit="users"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="https://example.com/api/v1/users"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="resolve should combine base and relative path"
+      as="_"
+    end
+  end
+
+  test id="T-URL-010" kind="unit" covers="R-URL-013"
+    // resolve with parent directory reference
+    step id="s1" kind="call"
+      fn="url.resolve"
+      arg name="base" lit="https://example.com/api/v1/"
+      arg name="relative" lit="../v2/users"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="https://example.com/api/v2/users"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="resolve should handle parent directory references"
+      as="_"
+    end
+  end
+
+  test id="T-URL-011" kind="unit" covers="R-URL-004"
+    // resolve absolute relative path
+    step id="s1" kind="call"
+      fn="url.resolve"
+      arg name="base" lit="https://example.com/old/path/"
+      arg name="relative" lit="/new/path"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="https://example.com/new/path"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="resolve with absolute relative should replace path"
+      as="_"
+    end
+  end
+
+  test id="T-URL-012" kind="unit" covers="R-URL-004"
+    // resolve with current directory reference
+    step id="s1" kind="call"
+      fn="url.resolve"
+      arg name="base" lit="https://example.com/api/"
+      arg name="relative" lit="./endpoint"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="https://example.com/api/endpoint"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="resolve should handle current directory reference"
+      as="_"
+    end
+  end
+
+end
+
+end

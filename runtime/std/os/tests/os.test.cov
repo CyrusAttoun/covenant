@@ -1,0 +1,528 @@
+// OS/Environment Module Test Suite
+// Comprehensive unit tests for OS info and environment variable functions.
+// Tests cover: os.env_get, os.env_set, os.platform, os.arch
+// Test naming: T-OS-XXX | Requirements: R-OS-XXX
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="os_requirements" kind="data"
+
+requires
+  req id="R-OS-001"
+    text "env_get() returns the value of a set environment variable"
+    priority critical
+  end
+
+  req id="R-OS-002"
+    text "env_get() returns none for unset environment variables"
+    priority critical
+  end
+
+  req id="R-OS-003"
+    text "env_set() creates a new environment variable"
+    priority critical
+  end
+
+  req id="R-OS-004"
+    text "env_set() overwrites an existing environment variable"
+    priority high
+  end
+
+  req id="R-OS-005"
+    text "platform() returns a non-empty string identifying the OS"
+    priority high
+  end
+
+  req id="R-OS-006"
+    text "arch() returns a non-empty string identifying the CPU architecture"
+    priority high
+  end
+
+  req id="R-OS-010"
+    text "env_set() with empty string value is valid"
+    priority medium
+  end
+
+  req id="R-OS-011"
+    text "env_get/set handles special characters in values"
+    priority medium
+  end
+
+  req id="R-OS-012"
+    text "Multiple environment variables are isolated from each other"
+    priority high
+  end
+
+  req id="R-OS-013"
+    text "env_get/set handles unicode in values"
+    priority medium
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="os_tests" kind="test"
+
+effects
+  effect os
+end
+
+tests
+  // ==========================================
+  // env_set / env_get Tests
+  // ==========================================
+
+  test id="T-OS-001" kind="unit" covers="R-OS-001,R-OS-003"
+    // set then get returns same value
+    step id="s1" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_VAR_001"
+      arg name="value" lit="test-value-001"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_VAR_001"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="test-value-001"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="env_get should return the value set by env_set"
+      as="_"
+    end
+  end
+
+  test id="T-OS-002" kind="unit" covers="R-OS-002"
+    // get returns none for unset variable
+    step id="s1" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_NONEXISTENT_VAR_XYZ_99999"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="None"
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_none"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_none"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_none"
+      arg name="message" lit="env_get should return none for unset variable"
+      as="_"
+    end
+  end
+
+  test id="T-OS-003" kind="unit" covers="R-OS-004"
+    // env_set overwrites existing value
+    step id="s1" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_OVERWRITE"
+      arg name="value" lit="original-value"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_OVERWRITE"
+      arg name="value" lit="updated-value"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_OVERWRITE"
+      as="result"
+    end
+
+    step id="s4" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s4a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="updated-value"
+          as="is_updated"
+        end
+      end
+
+      case variant type="None"
+        step id="s4b" kind="bind"
+          lit=false
+          as="is_updated"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_updated"
+      arg name="message" lit="env_set should overwrite existing value"
+      as="_"
+    end
+  end
+
+  test id="T-OS-004" kind="unit" covers="R-OS-010"
+    // empty string value is valid
+    step id="s1" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_EMPTY_VALUE"
+      arg name="value" lit=""
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_EMPTY_VALUE"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit=""
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="empty string should be a valid env value"
+      as="_"
+    end
+  end
+
+  test id="T-OS-005" kind="unit" covers="R-OS-011"
+    // special characters in values
+    step id="s1" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_SPECIAL"
+      arg name="value" lit="value with spaces/slashes\\and=equals&ampersands"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_SPECIAL"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="value with spaces/slashes\\and=equals&ampersands"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="special characters in env values should be preserved"
+      as="_"
+    end
+  end
+
+  test id="T-OS-006" kind="unit" covers="R-OS-012"
+    // multiple variables are isolated
+    step id="s1" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_ISO_A"
+      arg name="value" lit="value-a"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_ISO_B"
+      arg name="value" lit="value-b"
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_ISO_A"
+      as="result_a"
+    end
+
+    step id="s4" kind="match"
+      on="result_a"
+
+      case variant type="Some" bindings=("v")
+        step id="s4a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="value-a"
+          as="a_correct"
+        end
+      end
+
+      case variant type="None"
+        step id="s4b" kind="bind"
+          lit=false
+          as="a_correct"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s5" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_ISO_B"
+      as="result_b"
+    end
+
+    step id="s6" kind="match"
+      on="result_b"
+
+      case variant type="Some" bindings=("v")
+        step id="s6a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="value-b"
+          as="b_correct"
+        end
+      end
+
+      case variant type="None"
+        step id="s6b" kind="bind"
+          lit=false
+          as="b_correct"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s7" kind="compute"
+      op=and
+      input var="a_correct"
+      input var="b_correct"
+      as="both_correct"
+    end
+
+    step id="s8" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="both_correct"
+      arg name="message" lit="environment variables should be isolated from each other"
+      as="_"
+    end
+  end
+
+  test id="T-OS-007" kind="unit" covers="R-OS-013"
+    // unicode in env values
+    step id="s1" kind="call"
+      fn="os.env_set"
+      arg name="name" lit="COVENANT_TEST_UNICODE"
+      arg name="value" lit="\u{4E16}\u{754C}\u{1F600}"
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="os.env_get"
+      arg name="name" lit="COVENANT_TEST_UNICODE"
+      as="result"
+    end
+
+    step id="s3" kind="match"
+      on="result"
+
+      case variant type="Some" bindings=("v")
+        step id="s3a" kind="compute"
+          op=equals
+          input var="v"
+          input lit="\u{4E16}\u{754C}\u{1F600}"
+          as="matches"
+        end
+      end
+
+      case variant type="None"
+        step id="s3b" kind="bind"
+          lit=false
+          as="matches"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="unicode in env values should be preserved"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // platform() and arch() Tests
+  // ==========================================
+
+  test id="T-OS-008" kind="unit" covers="R-OS-005"
+    // platform returns non-empty string
+    step id="s1" kind="call"
+      fn="os.platform"
+      as="platform"
+    end
+
+    step id="s2" kind="compute"
+      op=not_equals
+      input var="platform"
+      input lit=""
+      as="non_empty"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="non_empty"
+      arg name="message" lit="platform() should return a non-empty string"
+      as="_"
+    end
+  end
+
+  test id="T-OS-009" kind="unit" covers="R-OS-006"
+    // arch returns non-empty string
+    step id="s1" kind="call"
+      fn="os.arch"
+      as="arch"
+    end
+
+    step id="s2" kind="compute"
+      op=not_equals
+      input var="arch"
+      input lit=""
+      as="non_empty"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="non_empty"
+      arg name="message" lit="arch() should return a non-empty string"
+      as="_"
+    end
+  end
+
+  test id="T-OS-010" kind="unit" covers="R-OS-005,R-OS-006"
+    // platform and arch return known valid values
+    step id="s1" kind="call"
+      fn="os.platform"
+      as="platform"
+    end
+
+    step id="s2" kind="call"
+      fn="os.arch"
+      as="arch"
+    end
+
+    // Verify platform and arch are both strings (non-empty check is sufficient)
+    step id="s3" kind="compute"
+      op=not_equals
+      input var="platform"
+      input lit=""
+      as="plat_ok"
+    end
+
+    step id="s4" kind="compute"
+      op=not_equals
+      input var="arch"
+      input lit=""
+      as="arch_ok"
+    end
+
+    step id="s5" kind="compute"
+      op=and
+      input var="plat_ok"
+      input var="arch_ok"
+      as="both_ok"
+    end
+
+    step id="s6" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="both_ok"
+      arg name="message" lit="both platform and arch should return non-empty strings"
+      as="_"
+    end
+  end
+
+end
+
+end

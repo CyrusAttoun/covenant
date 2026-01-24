@@ -1,0 +1,779 @@
+// Process Module Test Suite
+// Comprehensive unit tests for subprocess execution and management.
+// Tests cover: process.exec, process.spawn, process.kill, process.wait
+// Test naming: T-PROC-XXX | Requirements: R-PROC-XXX
+// Note: Tests use safe, cross-platform commands (echo, pwd).
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="process_requirements" kind="data"
+
+requires
+  req id="R-PROC-001"
+    text "exec() runs a command and captures stdout"
+    priority critical
+  end
+
+  req id="R-PROC-002"
+    text "exec() captures stderr separately from stdout"
+    priority high
+  end
+
+  req id="R-PROC-003"
+    text "exec() returns exit_code=0 for successful commands"
+    priority critical
+  end
+
+  req id="R-PROC-004"
+    text "exec() returns non-zero exit_code for failing commands"
+    priority critical
+  end
+
+  req id="R-PROC-005"
+    text "exec() with args passes arguments to the command"
+    priority critical
+  end
+
+  req id="R-PROC-006"
+    text "exec() with cwd sets the working directory"
+    priority high
+  end
+
+  req id="R-PROC-007"
+    text "exec() with env passes environment variables to the command"
+    priority high
+  end
+
+  req id="R-PROC-008"
+    text "exec() with timeout enforces time limit"
+    priority high
+  end
+
+  req id="R-PROC-009"
+    text "spawn() starts a background process and returns ProcessHandle"
+    priority critical
+  end
+
+  req id="R-PROC-010"
+    text "kill() terminates a spawned process"
+    priority critical
+  end
+
+  req id="R-PROC-011"
+    text "wait() waits for process completion and returns ProcessResult"
+    priority critical
+  end
+
+  req id="R-PROC-020"
+    text "exec() with non-existent command returns ProcessError"
+    priority high
+  end
+
+  req id="R-PROC-021"
+    text "exec() with empty stdout returns empty string"
+    priority medium
+  end
+
+  req id="R-PROC-022"
+    text "ProcessResult contains exit_code, stdout, stderr fields"
+    priority high
+  end
+
+  req id="R-PROC-023"
+    text "spawn() then wait() produces same result as exec()"
+    priority medium
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="process_tests" kind="test"
+
+effects
+  effect process
+end
+
+tests
+  // ==========================================
+  // exec() Basic Tests
+  // ==========================================
+
+  test id="T-PROC-001" kind="unit" covers="R-PROC-001"
+    // exec captures stdout
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="echo"
+      arg name="args" lit=["hello from covenant"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=contains
+          input field="stdout" of="r"
+          input lit="hello from covenant"
+          as="has_output"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="has_output"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_output"
+      arg name="message" lit="exec should capture command stdout"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-002" kind="unit" covers="R-PROC-003"
+    // exec returns exit_code=0 for success
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="echo"
+      arg name="args" lit=["success"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="exit_code" of="r"
+          input lit=0
+          as="is_zero"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_zero"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_zero"
+      arg name="message" lit="successful command should return exit_code=0"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-003" kind="unit" covers="R-PROC-004"
+    // exec returns non-zero exit code for failing command
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="sh"
+      arg name="args" lit=["-c", "exit 42"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=not_equals
+          input field="exit_code" of="r"
+          input lit=0
+          as="non_zero"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        // Some implementations may return ProcessError for non-zero exit
+        step id="s2b" kind="bind"
+          lit=true
+          as="non_zero"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="non_zero"
+      arg name="message" lit="failing command should return non-zero exit code"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-004" kind="unit" covers="R-PROC-005"
+    // exec with args passes arguments
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="echo"
+      arg name="args" lit=["arg1", "arg2", "arg3"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=contains
+          input field="stdout" of="r"
+          input lit="arg1"
+          as="has_arg1"
+        end
+        step id="s2b" kind="compute"
+          op=contains
+          input field="stdout" of="r"
+          input lit="arg3"
+          as="has_arg3"
+        end
+        step id="s2c" kind="compute"
+          op=and
+          input var="has_arg1"
+          input var="has_arg3"
+          as="args_passed"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2d" kind="bind"
+          lit=false
+          as="args_passed"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="args_passed"
+      arg name="message" lit="exec should pass all arguments to command"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-005" kind="unit" covers="R-PROC-002"
+    // exec captures stderr
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="sh"
+      arg name="args" lit=["-c", "echo error-output >&2"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=contains
+          input field="stderr" of="r"
+          input lit="error-output"
+          as="has_stderr"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="has_stderr"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_stderr"
+      arg name="message" lit="exec should capture stderr output"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-006" kind="unit" covers="R-PROC-006"
+    // exec with cwd sets working directory
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="pwd"
+      arg name="cwd" lit="/tmp"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=contains
+          input field="stdout" of="r"
+          input lit="tmp"
+          as="in_tmp"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="in_tmp"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="in_tmp"
+      arg name="message" lit="exec with cwd should run in specified directory"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-007" kind="unit" covers="R-PROC-007"
+    // exec with env passes environment variables
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="sh"
+      arg name="args" lit=["-c", "echo $COVENANT_TEST_ENV_VAR"]
+      arg name="env" lit={"COVENANT_TEST_ENV_VAR": "test-env-value-42"}
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=contains
+          input field="stdout" of="r"
+          input lit="test-env-value-42"
+          as="env_passed"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="env_passed"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="env_passed"
+      arg name="message" lit="exec with env should pass environment variables to command"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-008" kind="unit" covers="R-PROC-008"
+    // exec with timeout on slow command
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="sleep"
+      arg name="args" lit=["10"]
+      arg name="timeout" lit=500
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="timed_out"
+        end
+      end
+
+      case variant type="ProcessResult" bindings=("r")
+        // If it completed, check if exit code is non-zero (killed)
+        step id="s2b" kind="compute"
+          op=not_equals
+          input field="exit_code" of="r"
+          input lit=0
+          as="timed_out"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="timed_out"
+      arg name="message" lit="exec with short timeout should terminate long-running command"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // spawn/kill/wait Tests
+  // ==========================================
+
+  test id="T-PROC-009" kind="unit" covers="R-PROC-009"
+    // spawn starts background process
+    step id="s1" kind="call"
+      fn="process.spawn"
+      arg name="command" lit="sleep"
+      arg name="args" lit=["5"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessHandle" bindings=("h")
+        step id="s2a" kind="compute"
+          op=greater
+          input field="pid" of="h"
+          input lit=0
+          as="has_pid"
+        end
+        // Kill the spawned process to clean up
+        step id="s2b" kind="call"
+          fn="process.kill"
+          arg name="handle" from="h"
+          as="_"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2c" kind="bind"
+          lit=false
+          as="has_pid"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_pid"
+      arg name="message" lit="spawn should return ProcessHandle with valid pid"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-010" kind="unit" covers="R-PROC-010"
+    // kill terminates spawned process
+    step id="s1" kind="call"
+      fn="process.spawn"
+      arg name="command" lit="sleep"
+      arg name="args" lit=["30"]
+      as="spawn_result"
+    end
+
+    step id="s2" kind="match"
+      on="spawn_result"
+
+      case variant type="ProcessHandle" bindings=("h")
+        step id="s2a" kind="call"
+          fn="process.kill"
+          arg name="handle" from="h"
+          as="_"
+        end
+        step id="s2b" kind="bind"
+          lit=true
+          as="kill_ok"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2c" kind="bind"
+          lit=false
+          as="kill_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="kill_ok"
+      arg name="message" lit="kill should terminate spawned process without error"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-011" kind="unit" covers="R-PROC-011,R-PROC-023"
+    // spawn then wait produces ProcessResult
+    step id="s1" kind="call"
+      fn="process.spawn"
+      arg name="command" lit="echo"
+      arg name="args" lit=["spawn-wait-test"]
+      as="spawn_result"
+    end
+
+    step id="s2" kind="match"
+      on="spawn_result"
+
+      case variant type="ProcessHandle" bindings=("h")
+        step id="s2a" kind="call"
+          fn="process.wait"
+          arg name="handle" from="h"
+          as="wait_result"
+        end
+        step id="s2b" kind="match"
+          on="wait_result"
+
+          case variant type="ProcessResult" bindings=("r")
+            step id="s2b1" kind="compute"
+              op=equals
+              input field="exit_code" of="r"
+              input lit=0
+              as="exit_ok"
+            end
+            step id="s2b2" kind="compute"
+              op=contains
+              input field="stdout" of="r"
+              input lit="spawn-wait-test"
+              as="output_ok"
+            end
+            step id="s2b3" kind="compute"
+              op=and
+              input var="exit_ok"
+              input var="output_ok"
+              as="wait_ok"
+            end
+          end
+
+          case variant type="ProcessError" bindings=("e")
+            step id="s2b4" kind="bind"
+              lit=false
+              as="wait_ok"
+            end
+          end
+
+          as="_"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2c" kind="bind"
+          lit=false
+          as="wait_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="wait_ok"
+      arg name="message" lit="spawn then wait should produce ProcessResult with output"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // Error Cases
+  // ==========================================
+
+  test id="T-PROC-012" kind="unit" covers="R-PROC-020"
+    // exec non-existent command returns error
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="nonexistent-command-xyz-99999"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2a" kind="bind"
+          lit=true
+          as="is_error"
+        end
+      end
+
+      case wildcard
+        step id="s2b" kind="bind"
+          lit=false
+          as="is_error"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_error"
+      arg name="message" lit="exec with non-existent command should return ProcessError"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-013" kind="unit" covers="R-PROC-021"
+    // exec command with empty stdout
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="true"
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="exit_code" of="r"
+          input lit=0
+          as="success_ok"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="success_ok"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="success_ok"
+      arg name="message" lit="command with no output should succeed with exit_code=0"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-014" kind="unit" covers="R-PROC-022"
+    // ProcessResult has all expected fields
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="sh"
+      arg name="args" lit=["-c", "echo stdout-msg; echo stderr-msg >&2"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=equals
+          input field="exit_code" of="r"
+          input lit=0
+          as="has_exit"
+        end
+        step id="s2b" kind="compute"
+          op=contains
+          input field="stdout" of="r"
+          input lit="stdout-msg"
+          as="has_stdout"
+        end
+        step id="s2c" kind="compute"
+          op=contains
+          input field="stderr" of="r"
+          input lit="stderr-msg"
+          as="has_stderr"
+        end
+        step id="s2d" kind="compute"
+          op=and
+          input var="has_exit"
+          input var="has_stdout"
+          as="t1"
+        end
+        step id="s2e" kind="compute"
+          op=and
+          input var="t1"
+          input var="has_stderr"
+          as="all_fields"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2f" kind="bind"
+          lit=false
+          as="all_fields"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="all_fields"
+      arg name="message" lit="ProcessResult should have exit_code, stdout, and stderr"
+      as="_"
+    end
+  end
+
+  test id="T-PROC-015" kind="unit" covers="R-PROC-005"
+    // exec with multiple args and spaces
+    step id="s1" kind="call"
+      fn="process.exec"
+      arg name="command" lit="echo"
+      arg name="args" lit=["hello world", "foo bar"]
+      as="result"
+    end
+
+    step id="s2" kind="match"
+      on="result"
+
+      case variant type="ProcessResult" bindings=("r")
+        step id="s2a" kind="compute"
+          op=contains
+          input field="stdout" of="r"
+          input lit="hello world"
+          as="has_spaced_arg"
+        end
+      end
+
+      case variant type="ProcessError" bindings=("e")
+        step id="s2b" kind="bind"
+          lit=false
+          as="has_spaced_arg"
+        end
+      end
+
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="has_spaced_arg"
+      arg name="message" lit="exec should handle args with spaces correctly"
+      as="_"
+    end
+  end
+
+end
+
+end

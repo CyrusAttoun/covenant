@@ -19,27 +19,35 @@ fn discover_examples() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Discover all .cov files in the std/storage/tests/ directory
+/// Discover all .cov files in the runtime/std/*/tests/ directories
 fn discover_stdlib_tests() -> Vec<PathBuf> {
-    let stdlib_test_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("std")
-        .join("storage")
-        .join("tests");
+    let stdlib_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("runtime")
+        .join("std");
 
-    if !stdlib_test_dir.exists() {
+    if !stdlib_dir.exists() {
         return Vec::new();
     }
 
-    fs::read_dir(&stdlib_test_dir)
-        .expect("Failed to read std/storage/tests directory")
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .and_then(|ext| ext.to_str())
-                == Some("cov")
-        })
-        .collect()
+    let mut test_files = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&stdlib_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let tests_dir = entry.path().join("tests");
+            if tests_dir.is_dir() {
+                if let Ok(test_entries) = fs::read_dir(&tests_dir) {
+                    for test_entry in test_entries.filter_map(|e| e.ok()) {
+                        let path = test_entry.path();
+                        if path.extension().and_then(|ext| ext.to_str()) == Some("cov") {
+                            test_files.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    test_files
 }
 
 #[test]
@@ -104,7 +112,7 @@ fn test_stdlib_tests_parse() {
     let test_files = discover_stdlib_tests();
 
     if test_files.is_empty() {
-        println!("⊘ No stdlib test files found (std/storage/tests/ may not exist)");
+        println!("⊘ No stdlib test files found (runtime/std/*/tests/ may not exist)");
         return;
     }
 

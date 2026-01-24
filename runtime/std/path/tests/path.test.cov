@@ -1,0 +1,465 @@
+// Path Module Test Suite
+// Comprehensive unit tests for path manipulation functions.
+// Tests cover: join, resolve, dirname, basename, extname, is_absolute
+// Test naming: T-PATH-XXX | Requirements: R-PATH-XXX
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="path_requirements" kind="data"
+
+requires
+  req id="R-PATH-001"
+    text "join() combines base and segment with path separator"
+    priority critical
+  end
+
+  req id="R-PATH-002"
+    text "dirname() extracts the directory portion of a path"
+    priority critical
+  end
+
+  req id="R-PATH-003"
+    text "basename() extracts the filename from a path"
+    priority critical
+  end
+
+  req id="R-PATH-004"
+    text "extname() extracts the file extension including the dot"
+    priority critical
+  end
+
+  req id="R-PATH-005"
+    text "is_absolute() correctly identifies absolute vs relative paths"
+    priority critical
+  end
+
+  req id="R-PATH-006"
+    text "resolve() converts a relative path to an absolute path"
+    priority high
+  end
+
+  req id="R-PATH-010"
+    text "join() with empty segment appends separator only"
+    priority medium
+  end
+
+  req id="R-PATH-011"
+    text "dirname() of root path returns root"
+    priority medium
+  end
+
+  req id="R-PATH-012"
+    text "basename() on path without extension returns full filename"
+    priority medium
+  end
+
+  req id="R-PATH-013"
+    text "extname() on file without extension returns empty string"
+    priority medium
+  end
+
+  req id="R-PATH-014"
+    text "extname() on file with multiple dots returns last extension"
+    priority medium
+  end
+
+  req id="R-PATH-015"
+    text "join() chained calls build multi-segment paths"
+    priority high
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite - Pure Functions
+// ============================================================
+
+snippet id="path_tests" kind="test"
+
+tests
+  // ==========================================
+  // join() Tests
+  // ==========================================
+
+  test id="T-PATH-001" kind="unit" covers="R-PATH-001"
+    // join combines base and segment
+    step id="s1" kind="call"
+      fn="path.join"
+      arg name="base" lit="/home/user"
+      arg name="segment" lit="documents"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="/home/user/documents"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="join should combine base and segment with separator"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-002" kind="unit" covers="R-PATH-015"
+    // chained join builds multi-segment path
+    step id="s1" kind="call"
+      fn="path.join"
+      arg name="base" lit="/home/user"
+      arg name="segment" lit="documents"
+      as="p1"
+    end
+
+    step id="s2" kind="call"
+      fn="path.join"
+      arg name="base" from="p1"
+      arg name="segment" lit="report.txt"
+      as="result"
+    end
+
+    step id="s3" kind="compute"
+      op=equals
+      input var="result"
+      input lit="/home/user/documents/report.txt"
+      as="matches"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="chained join should build full path"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-003" kind="unit" covers="R-PATH-010"
+    // join with empty segment
+    step id="s1" kind="call"
+      fn="path.join"
+      arg name="base" lit="/home/user"
+      arg name="segment" lit=""
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="/home/user/"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="join with empty segment should append separator"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // dirname() Tests
+  // ==========================================
+
+  test id="T-PATH-004" kind="unit" covers="R-PATH-002"
+    // dirname extracts directory
+    step id="s1" kind="call"
+      fn="path.dirname"
+      arg name="path" lit="/home/user/documents/report.txt"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="/home/user/documents"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="dirname should extract directory portion"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-005" kind="unit" covers="R-PATH-011"
+    // dirname of root path
+    step id="s1" kind="call"
+      fn="path.dirname"
+      arg name="path" lit="/"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="/"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="dirname of root should return root"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // basename() Tests
+  // ==========================================
+
+  test id="T-PATH-006" kind="unit" covers="R-PATH-003"
+    // basename extracts filename
+    step id="s1" kind="call"
+      fn="path.basename"
+      arg name="path" lit="/home/user/documents/report.txt"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="report.txt"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="basename should extract filename"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-007" kind="unit" covers="R-PATH-012"
+    // basename on file without extension
+    step id="s1" kind="call"
+      fn="path.basename"
+      arg name="path" lit="/usr/bin/node"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="node"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="basename on extensionless file should return full name"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // extname() Tests
+  // ==========================================
+
+  test id="T-PATH-008" kind="unit" covers="R-PATH-004"
+    // extname extracts extension with dot
+    step id="s1" kind="call"
+      fn="path.extname"
+      arg name="path" lit="/home/user/report.txt"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit=".txt"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="extname should return extension including dot"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-009" kind="unit" covers="R-PATH-013"
+    // extname on file without extension
+    step id="s1" kind="call"
+      fn="path.extname"
+      arg name="path" lit="/usr/bin/node"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit=""
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="extname on extensionless file should return empty string"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-010" kind="unit" covers="R-PATH-014"
+    // extname on file with multiple dots
+    step id="s1" kind="call"
+      fn="path.extname"
+      arg name="path" lit="/home/user/archive.tar.gz"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit=".gz"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="extname on multi-dot file should return last extension"
+      as="_"
+    end
+  end
+
+  // ==========================================
+  // is_absolute() Tests
+  // ==========================================
+
+  test id="T-PATH-011" kind="unit" covers="R-PATH-005"
+    // is_absolute on Unix absolute path
+    step id="s1" kind="call"
+      fn="path.is_absolute"
+      arg name="path" lit="/home/user/file.txt"
+      as="result"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="result"
+      arg name="message" lit="Unix path starting with / should be absolute"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-012" kind="unit" covers="R-PATH-005"
+    // is_absolute on relative path
+    step id="s1" kind="call"
+      fn="path.is_absolute"
+      arg name="path" lit="./relative/path.txt"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=not
+      input var="result"
+      as="is_relative"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_relative"
+      arg name="message" lit="path starting with ./ should not be absolute"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-013" kind="unit" covers="R-PATH-005"
+    // is_absolute on bare relative path
+    step id="s1" kind="call"
+      fn="path.is_absolute"
+      arg name="path" lit="src/main.ts"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=not
+      input var="result"
+      as="is_relative"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_relative"
+      arg name="message" lit="bare relative path should not be absolute"
+      as="_"
+    end
+  end
+
+end
+
+end
+
+// ============================================================
+// Test Suite - path.resolve (requires os effect)
+// ============================================================
+
+snippet id="path_resolve_tests" kind="test"
+
+effects
+  effect os
+end
+
+tests
+  test id="T-PATH-014" kind="unit" covers="R-PATH-006"
+    // resolve converts relative to absolute
+    step id="s1" kind="call"
+      fn="path.resolve"
+      arg name="path" lit="./relative/file.txt"
+      as="result"
+    end
+
+    step id="s2" kind="call"
+      fn="path.is_absolute"
+      arg name="path" from="result"
+      as="is_abs"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_abs"
+      arg name="message" lit="resolve should produce an absolute path"
+      as="_"
+    end
+  end
+
+  test id="T-PATH-015" kind="unit" covers="R-PATH-006"
+    // resolve on already-absolute path returns same path
+    step id="s1" kind="call"
+      fn="path.resolve"
+      arg name="path" lit="/absolute/path/file.txt"
+      as="result"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="result"
+      input lit="/absolute/path/file.txt"
+      as="unchanged"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="unchanged"
+      arg name="message" lit="resolve on absolute path should return it unchanged"
+      as="_"
+    end
+  end
+
+end
+
+end

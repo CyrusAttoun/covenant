@@ -1,0 +1,289 @@
+// Crypto Module Test Suite
+// Comprehensive unit tests for cryptographic hashing and random generation.
+// Tests cover: crypto.sha256, crypto.random_bytes
+// Test naming: T-CRYPTO-XXX | Requirements: R-CRYPTO-XXX
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="crypto_requirements" kind="data"
+
+requires
+  req id="R-CRYPTO-001"
+    text "sha256() produces correct hash for known inputs"
+    priority critical
+  end
+
+  req id="R-CRYPTO-002"
+    text "sha256() is deterministic - same input always produces same output"
+    priority critical
+  end
+
+  req id="R-CRYPTO-003"
+    text "random_bytes() returns bytes of the requested length"
+    priority critical
+  end
+
+  req id="R-CRYPTO-004"
+    text "random_bytes() produces different output on each call"
+    priority high
+  end
+
+  req id="R-CRYPTO-010"
+    text "sha256() handles empty string input"
+    priority high
+  end
+
+  req id="R-CRYPTO-011"
+    text "sha256() handles unicode input"
+    priority medium
+  end
+
+  req id="R-CRYPTO-012"
+    text "random_bytes() with small length (1 byte) is valid"
+    priority medium
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite - sha256 (pure function)
+// ============================================================
+
+snippet id="crypto_sha256_tests" kind="test"
+
+tests
+  test id="T-CRYPTO-001" kind="unit" covers="R-CRYPTO-001"
+    // sha256 of "hello" produces known hash
+    step id="s1" kind="call"
+      fn="crypto.sha256"
+      arg name="input" lit="hello"
+      as="hash"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="hash"
+      input lit="2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="sha256('hello') should produce known hash value"
+      as="_"
+    end
+  end
+
+  test id="T-CRYPTO-002" kind="unit" covers="R-CRYPTO-010"
+    // sha256 of empty string produces known hash
+    step id="s1" kind="call"
+      fn="crypto.sha256"
+      arg name="input" lit=""
+      as="hash"
+    end
+
+    step id="s2" kind="compute"
+      op=equals
+      input var="hash"
+      input lit="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      as="matches"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="matches"
+      arg name="message" lit="sha256('') should produce known empty-string hash"
+      as="_"
+    end
+  end
+
+  test id="T-CRYPTO-003" kind="unit" covers="R-CRYPTO-002"
+    // sha256 is deterministic
+    step id="s1" kind="call"
+      fn="crypto.sha256"
+      arg name="input" lit="deterministic-test"
+      as="hash1"
+    end
+
+    step id="s2" kind="call"
+      fn="crypto.sha256"
+      arg name="input" lit="deterministic-test"
+      as="hash2"
+    end
+
+    step id="s3" kind="compute"
+      op=equals
+      input var="hash1"
+      input var="hash2"
+      as="same"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="same"
+      arg name="message" lit="sha256 should produce same hash for same input"
+      as="_"
+    end
+  end
+
+  test id="T-CRYPTO-004" kind="unit" covers="R-CRYPTO-001"
+    // sha256 produces different hashes for different inputs
+    step id="s1" kind="call"
+      fn="crypto.sha256"
+      arg name="input" lit="input-a"
+      as="hash_a"
+    end
+
+    step id="s2" kind="call"
+      fn="crypto.sha256"
+      arg name="input" lit="input-b"
+      as="hash_b"
+    end
+
+    step id="s3" kind="compute"
+      op=not_equals
+      input var="hash_a"
+      input var="hash_b"
+      as="different"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="different"
+      arg name="message" lit="sha256 should produce different hashes for different inputs"
+      as="_"
+    end
+  end
+
+  test id="T-CRYPTO-005" kind="unit" covers="R-CRYPTO-011"
+    // sha256 handles unicode input
+    step id="s1" kind="call"
+      fn="crypto.sha256"
+      arg name="input" lit="\u{4E16}\u{754C}\u{1F600}"
+      as="hash"
+    end
+
+    step id="s2" kind="compute"
+      op=not_equals
+      input var="hash"
+      input lit=""
+      as="non_empty"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="non_empty"
+      arg name="message" lit="sha256 should handle unicode input and produce non-empty hash"
+      as="_"
+    end
+  end
+
+end
+
+end
+
+// ============================================================
+// Test Suite - random_bytes (requires random effect)
+// ============================================================
+
+snippet id="crypto_random_tests" kind="test"
+
+effects
+  effect random
+end
+
+tests
+  test id="T-CRYPTO-006" kind="unit" covers="R-CRYPTO-003"
+    // random_bytes returns requested length (32 bytes)
+    step id="s1" kind="call"
+      fn="crypto.random_bytes"
+      arg name="length" lit=32
+      as="bytes"
+    end
+
+    step id="s2" kind="compute"
+      op=byte_len
+      input var="bytes"
+      as="len"
+    end
+
+    step id="s3" kind="compute"
+      op=equals
+      input var="len"
+      input lit=32
+      as="correct_len"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="correct_len"
+      arg name="message" lit="random_bytes(32) should return 32 bytes"
+      as="_"
+    end
+  end
+
+  test id="T-CRYPTO-007" kind="unit" covers="R-CRYPTO-004"
+    // random_bytes is non-deterministic
+    step id="s1" kind="call"
+      fn="crypto.random_bytes"
+      arg name="length" lit=16
+      as="bytes1"
+    end
+
+    step id="s2" kind="call"
+      fn="crypto.random_bytes"
+      arg name="length" lit=16
+      as="bytes2"
+    end
+
+    step id="s3" kind="compute"
+      op=not_equals
+      input var="bytes1"
+      input var="bytes2"
+      as="different"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="different"
+      arg name="message" lit="random_bytes should produce different output on each call"
+      as="_"
+    end
+  end
+
+  test id="T-CRYPTO-008" kind="unit" covers="R-CRYPTO-012"
+    // random_bytes with small length (1 byte)
+    step id="s1" kind="call"
+      fn="crypto.random_bytes"
+      arg name="length" lit=1
+      as="bytes"
+    end
+
+    step id="s2" kind="compute"
+      op=byte_len
+      input var="bytes"
+      as="len"
+    end
+
+    step id="s3" kind="compute"
+      op=equals
+      input var="len"
+      input lit=1
+      as="correct_len"
+    end
+
+    step id="s4" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="correct_len"
+      arg name="message" lit="random_bytes(1) should return exactly 1 byte"
+      as="_"
+    end
+  end
+
+end
+
+end

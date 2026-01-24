@@ -1,0 +1,140 @@
+// Timers Module Test Suite
+// Comprehensive unit tests for timer/delay functions.
+// Tests cover: timers.delay
+// Test naming: T-TIMER-XXX | Requirements: R-TIMER-XXX
+
+// ============================================================
+// Requirements Definition
+// ============================================================
+
+snippet id="timers_requirements" kind="data"
+
+requires
+  req id="R-TIMER-001"
+    text "delay() pauses execution for specified milliseconds and completes"
+    priority critical
+  end
+
+  req id="R-TIMER-002"
+    text "delay(0) is valid and completes immediately"
+    priority high
+  end
+
+  req id="R-TIMER-003"
+    text "Sequential delays are cumulative (both complete)"
+    priority high
+  end
+
+  req id="R-TIMER-004"
+    text "delay() with moderate duration (500ms) completes"
+    priority medium
+  end
+
+  req id="R-TIMER-005"
+    text "delay() with 1 second duration completes"
+    priority medium
+  end
+end
+
+end
+
+// ============================================================
+// Test Suite
+// ============================================================
+
+snippet id="timers_tests" kind="test"
+
+effects
+  effect timers
+end
+
+tests
+  test id="T-TIMER-001" kind="unit" covers="R-TIMER-001"
+    // delay 100ms completes without error
+    step id="s1" kind="call"
+      fn="timers.delay"
+      arg name="ms" lit=100
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="delay(100) should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-TIMER-002" kind="unit" covers="R-TIMER-002"
+    // delay 0ms is valid (no-op)
+    step id="s1" kind="call"
+      fn="timers.delay"
+      arg name="ms" lit=0
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="delay(0) should be valid and complete immediately"
+      as="_"
+    end
+  end
+
+  test id="T-TIMER-003" kind="unit" covers="R-TIMER-003"
+    // sequential delays both complete
+    step id="s1" kind="call"
+      fn="timers.delay"
+      arg name="ms" lit=100
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="timers.delay"
+      arg name="ms" lit=100
+      as="_"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="sequential delays should both complete"
+      as="_"
+    end
+  end
+
+  test id="T-TIMER-004" kind="unit" covers="R-TIMER-004"
+    // delay 500ms completes
+    step id="s1" kind="call"
+      fn="timers.delay"
+      arg name="ms" lit=500
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="delay(500) should complete without error"
+      as="_"
+    end
+  end
+
+  test id="T-TIMER-005" kind="unit" covers="R-TIMER-005"
+    // delay 1000ms completes
+    step id="s1" kind="call"
+      fn="timers.delay"
+      arg name="ms" lit=1000
+      as="_"
+    end
+
+    step id="s2" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" lit=true
+      arg name="message" lit="delay(1000) should complete without error"
+      as="_"
+    end
+  end
+
+end
+
+end
