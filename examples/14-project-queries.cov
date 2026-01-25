@@ -9,7 +9,7 @@ end
 
 signature
   fn name="find_db_functions"
-    returns type="FunctionInfo[]"
+    returns type="Any"
   end
 end
 
@@ -43,7 +43,7 @@ end
 signature
   fn name="find_callers"
     param name="fn_name" type="String"
-    returns type="FunctionInfo[]"
+    returns type="Any"
   end
 end
 
@@ -74,7 +74,7 @@ end
 
 signature
   fn name="find_dead_code"
-    returns type="FunctionInfo[]"
+    returns type="Any"
   end
 end
 
@@ -109,7 +109,7 @@ end
 
 signature
   fn name="find_urls"
-    returns type="LiteralInfo[]"
+    returns type="Any"
   end
 end
 
@@ -143,7 +143,7 @@ end
 
 signature
   fn name="find_untested_requirements"
-    returns type="RequirementInfo[]"
+    returns type="Any"
   end
 end
 

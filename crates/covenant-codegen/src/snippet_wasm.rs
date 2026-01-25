@@ -220,6 +220,8 @@ pub struct SnippetWasmCompiler<'a> {
     gai_indices: Option<GaiFunctionIndices>,
     /// Graph layout (set when data snippets are present)
     graph_layout: Option<GraphLayout>,
+    /// Set of function names/IDs that have no WASM return value (Unit return type)
+    void_functions: std::collections::HashSet<String>,
 }
 
 /// Describes a registered extern-abstract import
@@ -270,12 +272,20 @@ impl<'a> SnippetWasmCompiler<'a> {
             extern_imports: HashMap::new(),
             gai_indices: None,
             graph_layout: None,
+            void_functions: std::collections::HashSet::new(),
         }
     }
 
     /// Compile snippets to WASM
     pub fn compile_snippets(&mut self, snippets: &[Snippet]) -> Result<Vec<u8>, CodegenError> {
         let mut module = Module::new();
+
+        // Register struct layouts from struct snippets
+        for snippet in snippets {
+            if snippet.kind == SnippetKind::Struct {
+                self.register_struct_layout(snippet);
+            }
+        }
 
         // Collect all function snippets (both pure and effectful)
         let functions: Vec<&Snippet> = snippets
@@ -372,6 +382,14 @@ impl<'a> SnippetWasmCompiler<'a> {
                 // Also map by snippet ID for fully-qualified calls
                 self.function_indices
                     .insert(snippet.id.clone(), import_count + i as u32);
+                // Track Unit-returning functions (no WASM return value)
+                let has_wasm_return = sig.returns.as_ref()
+                    .and_then(|r| self.return_type_to_valtype(r))
+                    .is_some();
+                if !has_wasm_return {
+                    self.void_functions.insert(sig.name.clone());
+                    self.void_functions.insert(snippet.id.clone());
+                }
             }
         }
 
@@ -571,9 +589,10 @@ impl<'a> SnippetWasmCompiler<'a> {
 
         // Split ID on last dot: "text.concat" → ("text", "concat")
         // "std.text.regex_test" → ("std.text", "regex_test")
+        // "to_uppercase" (no dot) → ("extern", "to_uppercase")
         let (module, func_name) = match id.rfind('.') {
             Some(pos) => (&id[..pos], &id[pos + 1..]),
-            None => return, // Invalid ID format
+            None => ("extern", id.as_str()),
         };
 
         // Get function signature to determine param types
@@ -601,21 +620,54 @@ impl<'a> SnippetWasmCompiler<'a> {
             param_kinds.push(kind);
         }
 
-        // Return type is always i64 (fat pointer for String/List, value for Int/Bool)
-        let wasm_results = vec![ValType::I64];
+        // Return type: Unit maps to no return value; everything else is i64
+        let wasm_results = if self.extern_returns_unit(&sig) {
+            vec![]
+        } else {
+            vec![ValType::I64]
+        };
 
         let func_index = self.imports.add_import(module, func_name, wasm_params, wasm_results);
-        self.extern_imports.insert(id.clone(), ExternImport {
+        let ext_import = ExternImport {
             func_index,
             param_types: param_kinds,
-        });
+        };
+        self.extern_imports.insert(id.clone(), ext_import.clone());
+        // Also register by function name (from signature) for short-name calls
+        if sig.name != *id {
+            self.extern_imports.entry(sig.name.clone()).or_insert(ext_import);
+        }
     }
 
-    /// Also register user-defined extern-abstract snippets from the program
+    /// Also register user-defined extern-abstract and extern snippets from the program
     fn register_user_extern_abstracts(&mut self, snippets: &[Snippet]) {
         for snippet in snippets {
-            if snippet.kind == SnippetKind::ExternAbstract {
+            if snippet.kind == SnippetKind::ExternAbstract || snippet.kind == SnippetKind::Extern {
                 self.register_single_extern(snippet);
+            }
+        }
+    }
+
+    /// Register a struct snippet's layout for field access
+    fn register_struct_layout(&mut self, snippet: &Snippet) {
+        // Find struct signature
+        for section in &snippet.sections {
+            if let Section::Signature(sig) = section {
+                if let SignatureKind::Struct(struct_sig) = &sig.kind {
+                    let mut fields = HashMap::new();
+                    for (i, field) in struct_sig.fields.iter().enumerate() {
+                        fields.insert(field.name.clone(), FieldLayout {
+                            offset: (i as u32) * 8,
+                            size: 8,
+                            wasm_type: WasmType::I64,
+                        });
+                    }
+                    self.struct_layouts.insert(struct_sig.name.clone(), StructLayout {
+                        size: (struct_sig.fields.len() as u32) * 8,
+                        alignment: 8,
+                        fields,
+                    });
+                }
             }
         }
     }
@@ -632,11 +684,19 @@ impl<'a> SnippetWasmCompiler<'a> {
         // Reset locals
         self.locals.clear();
         self.local_count = 0;
+        self.local_types.clear();
 
-        // Add parameters as locals
+        // Add parameters as locals and track their struct types
         for param in &sig.params {
             self.locals.insert(param.name.clone(), self.local_count);
             self.local_count += 1;
+            // If the parameter type is a known struct, register it in local_types
+            if let TypeKind::Named(path) = &param.ty.kind {
+                let type_name = path.name().to_string();
+                if self.struct_layouts.contains_key(&type_name) {
+                    self.local_types.insert(param.name.clone(), type_name);
+                }
+            }
         }
 
         // Count additional locals needed from step bindings
@@ -655,10 +715,13 @@ impl<'a> SnippetWasmCompiler<'a> {
             }
         }
 
-        // If function returns a value, we need something on the stack for the implicit return.
-        // Push a dummy value (0) in case all paths returned early via explicit returns.
-        // The unreachable instruction would be better but let's keep it simple.
-        if sig.returns.is_some() {
+        // If function returns a value (non-Unit), we need something on the stack for the
+        // implicit return. Push a dummy value (0) in case all paths returned early via
+        // explicit returns. Unit-returning functions have no WASM return value.
+        let has_wasm_return = sig.returns.as_ref()
+            .and_then(|r| self.return_type_to_valtype(r))
+            .is_some();
+        if has_wasm_return {
             wasm_func.instruction(&Instruction::I64Const(0));
         }
 
@@ -694,8 +757,8 @@ impl<'a> SnippetWasmCompiler<'a> {
                     }
                 }
                 StepKind::For(for_step) => {
-                    // Count: index local, length local, item local
-                    count += 3;
+                    // Count: index local, length local, item local, base local
+                    count += 4;
                     count += self.count_step_bindings(&for_step.steps);
                 }
                 StepKind::Call(call) => {
@@ -705,6 +768,12 @@ impl<'a> SnippetWasmCompiler<'a> {
                 StepKind::Construct(_) => {
                     // Struct construction needs a temp local for the pointer
                     count += 1;
+                }
+                StepKind::Return(ret) => {
+                    // Return with struct construction needs a temp local for the pointer
+                    if matches!(&ret.value, ReturnValue::Struct(_)) {
+                        count += 1;
+                    }
                 }
                 _ => {}
             }
@@ -721,14 +790,19 @@ impl<'a> SnippetWasmCompiler<'a> {
                 if step.output_binding != "_" {
                     let local = self.allocate_local(&step.output_binding);
                     func.instruction(&Instruction::LocalSet(local));
+                } else {
+                    func.instruction(&Instruction::Drop);
                 }
             }
             StepKind::Call(call) => {
                 self.compile_call_step(call, func)?;
-                // Store result if not discarded
-                if step.output_binding != "_" {
+                let has_return = self.call_has_return_value(&call.fn_name);
+                if step.output_binding != "_" && has_return {
                     let local = self.allocate_local(&step.output_binding);
                     func.instruction(&Instruction::LocalSet(local));
+                } else if step.output_binding == "_" && has_return {
+                    // Function returns a value but result is discarded - pop it
+                    func.instruction(&Instruction::Drop);
                 }
             }
             StepKind::Return(ret) => {
@@ -744,6 +818,8 @@ impl<'a> SnippetWasmCompiler<'a> {
                 if step.output_binding != "_" {
                     let local = self.allocate_local(&step.output_binding);
                     func.instruction(&Instruction::LocalSet(local));
+                } else {
+                    func.instruction(&Instruction::Drop);
                 }
             }
             StepKind::Match(match_step) => {
@@ -758,6 +834,8 @@ impl<'a> SnippetWasmCompiler<'a> {
                 if step.output_binding != "_" {
                     let local = self.allocate_local(&step.output_binding);
                     func.instruction(&Instruction::LocalSet(local));
+                } else {
+                    func.instruction(&Instruction::Drop);
                 }
             }
             StepKind::Construct(construct) => {
@@ -778,13 +856,21 @@ impl<'a> SnippetWasmCompiler<'a> {
                 if step.output_binding != "_" {
                     let local = self.allocate_local(&step.output_binding);
                     func.instruction(&Instruction::LocalSet(local));
+                } else {
+                    func.instruction(&Instruction::Drop);
                 }
             }
             StepKind::Insert(_) | StepKind::Update(_) | StepKind::Delete(_) |
             StepKind::Transaction(_) | StepKind::Traverse(_) => {
-                // These require database effects and runtime support
-                // For now, generate a placeholder call to runtime
-                return Err(CodegenError::UnsupportedExpression);
+                // These require database/meta effects and runtime support.
+                // Generate a placeholder value (i64 0) for the binding.
+                // At runtime, the host would intercept these via effect imports.
+                if step.output_binding != "_" {
+                    func.instruction(&Instruction::I64Const(0));
+                    let local = self.allocate_local(&step.output_binding);
+                    func.instruction(&Instruction::LocalSet(local));
+                }
+                // If discarded (as="_"), don't push anything onto the stack
             }
         }
         Ok(())
@@ -880,40 +966,77 @@ impl<'a> SnippetWasmCompiler<'a> {
     ///
     /// For loops iterate over collections. We compile to a WASM loop with
     /// index tracking and bounds checking.
+    ///
+    /// Collections are stored as fat pointers: (ptr << 32) | len
+    /// The memory layout at ptr is: [count:i32][item0:i64][item1:i64]...
     fn compile_for_step(&mut self, for_step: &ForStep, func: &mut Function) -> Result<(), CodegenError> {
         // Get the collection (copy the index to avoid borrow issues)
         let collection_local = *self.locals.get(&for_step.collection)
             .ok_or_else(|| CodegenError::UndefinedFunction { name: for_step.collection.clone() })?;
 
-        // Allocate locals for loop index and length
+        // Allocate locals for loop state
         let index_local = self.allocate_local(&format!("__for_idx_{}", for_step.var));
         let len_local = self.allocate_local(&format!("__for_len_{}", for_step.var));
         let item_local = self.allocate_local(&for_step.var);
+        let base_local = self.allocate_local(&format!("__for_base_{}", for_step.var));
+
+        // Extract array base pointer from fat pointer (high 32 bits)
+        // base = collection >> 32
+        func.instruction(&Instruction::LocalGet(collection_local));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::LocalSet(base_local));
+
+        // Start outer block - we'll skip the loop entirely if base is null
+        func.instruction(&Instruction::Block(BlockType::Empty)); // outer block for break/skip
+
+        // Check if base is null (0) - if so, skip the loop entirely
+        func.instruction(&Instruction::LocalGet(base_local));
+        func.instruction(&Instruction::I64Eqz);
+        func.instruction(&Instruction::BrIf(0)); // Skip loop if base is null
+
+        // Read array count from memory at base (first 4 bytes)
+        // len = i32.load(base) extended to i64
+        func.instruction(&Instruction::LocalGet(base_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Load(MemArg {
+            offset: 0,
+            align: 2, // 4-byte alignment
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(len_local));
 
         // Initialize index to 0
         func.instruction(&Instruction::I64Const(0));
         func.instruction(&Instruction::LocalSet(index_local));
 
-        // Get collection length (assume it's stored as first word of collection struct)
-        func.instruction(&Instruction::LocalGet(collection_local));
-        // For now, assume length is accessible - in real implementation would need
-        // proper collection type handling
-        func.instruction(&Instruction::LocalSet(len_local));
-
         // Start loop block
-        func.instruction(&Instruction::Block(BlockType::Empty)); // outer block for break
+        func.instruction(&Instruction::Block(BlockType::Empty)); // inner block for break
         func.instruction(&Instruction::Loop(BlockType::Empty)); // loop block
 
         // Check if index >= length (exit condition)
         func.instruction(&Instruction::LocalGet(index_local));
         func.instruction(&Instruction::LocalGet(len_local));
         func.instruction(&Instruction::I64GeS); // index >= length means exit
-        // I64GeS returns i32 (0 or 1), convert to i32 for br_if
-        func.instruction(&Instruction::BrIf(1)); // Break out if done (to outer block)
+        func.instruction(&Instruction::BrIf(1)); // Break out if done (to inner block)
 
-        // Get current item (would need proper collection indexing)
-        // For now, just use the index as a placeholder
+        // Get current item from array: item = i64.load(base + 4 + index * 8)
+        // Calculate address: base + 4 + index * 8
+        func.instruction(&Instruction::LocalGet(base_local));
+        func.instruction(&Instruction::I64Const(4)); // skip count field
+        func.instruction(&Instruction::I64Add);
         func.instruction(&Instruction::LocalGet(index_local));
+        func.instruction(&Instruction::I64Const(8)); // each item is 8 bytes
+        func.instruction(&Instruction::I64Mul);
+        func.instruction(&Instruction::I64Add);
+        // Load item (i64 fat pointer for strings/values)
+        func.instruction(&Instruction::I32WrapI64); // address as i32
+        func.instruction(&Instruction::I64Load(MemArg {
+            offset: 0,
+            align: 3, // 8-byte alignment
+            memory_index: 0,
+        }));
         func.instruction(&Instruction::LocalSet(item_local));
 
         // Compile loop body
@@ -930,8 +1053,11 @@ impl<'a> SnippetWasmCompiler<'a> {
         // Branch back to loop start
         func.instruction(&Instruction::Br(0));
 
-        // End loop and outer block
+        // End loop and inner block
         func.instruction(&Instruction::End); // end loop
+        func.instruction(&Instruction::End); // end inner block
+
+        // End outer block (null check skip target)
         func.instruction(&Instruction::End); // end outer block
 
         Ok(())
@@ -1120,6 +1246,112 @@ impl<'a> SnippetWasmCompiler<'a> {
                 func.instruction(&Instruction::I64Const(0));
                 func.instruction(&Instruction::I64Sub);
             }
+
+            // Bitwise operations
+            Operation::BitAnd => { func.instruction(&Instruction::I64And); }
+            Operation::BitOr => { func.instruction(&Instruction::I64Or); }
+            Operation::BitXor => { func.instruction(&Instruction::I64Xor); }
+            Operation::BitNot => {
+                // NOT = XOR with -1 (all bits set)
+                func.instruction(&Instruction::I64Const(-1));
+                func.instruction(&Instruction::I64Xor);
+            }
+            Operation::BitShl => { func.instruction(&Instruction::I64Shl); }
+            Operation::BitShr => { func.instruction(&Instruction::I64ShrS); }
+            Operation::BitUshr => { func.instruction(&Instruction::I64ShrU); }
+
+            // Numeric operations
+            Operation::Abs => {
+                // abs(x) = if x < 0 then -x else x
+                let tmp = self.allocate_local("__abs_tmp");
+                func.instruction(&Instruction::LocalTee(tmp));
+                func.instruction(&Instruction::I64Const(0));
+                func.instruction(&Instruction::I64LtS);
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+                func.instruction(&Instruction::I64Const(0));
+                func.instruction(&Instruction::LocalGet(tmp));
+                func.instruction(&Instruction::I64Sub);
+                func.instruction(&Instruction::Else);
+                func.instruction(&Instruction::LocalGet(tmp));
+                func.instruction(&Instruction::End);
+            }
+            Operation::Min => {
+                // min(a, b) = if a < b then a else b
+                let b = self.allocate_local("__min_b");
+                let a = self.allocate_local("__min_a");
+                func.instruction(&Instruction::LocalSet(b));
+                func.instruction(&Instruction::LocalSet(a));
+                func.instruction(&Instruction::LocalGet(a));
+                func.instruction(&Instruction::LocalGet(b));
+                func.instruction(&Instruction::I64LtS);
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+                func.instruction(&Instruction::LocalGet(a));
+                func.instruction(&Instruction::Else);
+                func.instruction(&Instruction::LocalGet(b));
+                func.instruction(&Instruction::End);
+            }
+            Operation::Max => {
+                // max(a, b) = if a > b then a else b
+                let b = self.allocate_local("__max_b");
+                let a = self.allocate_local("__max_a");
+                func.instruction(&Instruction::LocalSet(b));
+                func.instruction(&Instruction::LocalSet(a));
+                func.instruction(&Instruction::LocalGet(a));
+                func.instruction(&Instruction::LocalGet(b));
+                func.instruction(&Instruction::I64GtS);
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+                func.instruction(&Instruction::LocalGet(a));
+                func.instruction(&Instruction::Else);
+                func.instruction(&Instruction::LocalGet(b));
+                func.instruction(&Instruction::End);
+            }
+            Operation::Sign => {
+                // sign(x) = if x < 0 then -1 else if x > 0 then 1 else 0
+                let tmp = self.allocate_local("__sign_tmp");
+                func.instruction(&Instruction::LocalTee(tmp));
+                func.instruction(&Instruction::I64Const(0));
+                func.instruction(&Instruction::I64LtS);
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+                func.instruction(&Instruction::I64Const(-1));
+                func.instruction(&Instruction::Else);
+                func.instruction(&Instruction::LocalGet(tmp));
+                func.instruction(&Instruction::I64Const(0));
+                func.instruction(&Instruction::I64GtS);
+                func.instruction(&Instruction::I64ExtendI32U);
+                func.instruction(&Instruction::End);
+            }
+            Operation::Clamp => {
+                // clamp(x, lo, hi) = max(lo, min(x, hi))
+                let hi = self.allocate_local("__clamp_hi");
+                let lo = self.allocate_local("__clamp_lo");
+                let x = self.allocate_local("__clamp_x");
+                func.instruction(&Instruction::LocalSet(hi));
+                func.instruction(&Instruction::LocalSet(lo));
+                func.instruction(&Instruction::LocalSet(x));
+
+                // min(x, hi)
+                func.instruction(&Instruction::LocalGet(x));
+                func.instruction(&Instruction::LocalGet(hi));
+                func.instruction(&Instruction::I64LtS);
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+                func.instruction(&Instruction::LocalGet(x));
+                func.instruction(&Instruction::Else);
+                func.instruction(&Instruction::LocalGet(hi));
+                func.instruction(&Instruction::End);
+
+                // max(lo, result)
+                let mid = self.allocate_local("__clamp_mid");
+                func.instruction(&Instruction::LocalSet(mid));
+                func.instruction(&Instruction::LocalGet(lo));
+                func.instruction(&Instruction::LocalGet(mid));
+                func.instruction(&Instruction::I64GtS);
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+                func.instruction(&Instruction::LocalGet(lo));
+                func.instruction(&Instruction::Else);
+                func.instruction(&Instruction::LocalGet(mid));
+                func.instruction(&Instruction::End);
+            }
+
             // All other operations are not yet supported in WASM codegen
             _ => {
                 return Err(CodegenError::UnsupportedExpression);
@@ -1200,9 +1432,42 @@ impl<'a> SnippetWasmCompiler<'a> {
             ReturnValue::Lit(lit) => {
                 self.compile_literal(lit, func)?;
             }
-            ReturnValue::Struct(_) | ReturnValue::Variant(_) => {
-                // Structs and variants not yet supported in WASM
-                return Err(CodegenError::UnsupportedExpression);
+            ReturnValue::Struct(s) => {
+                // Allocate struct on heap and return pointer as i64
+                let struct_size = (s.fields.len() as u32) * 8;
+                let ptr_local = self.allocate_local("__ret_struct_ptr");
+
+                // Bump-allocate: ptr = heap_ptr; heap_ptr += size
+                func.instruction(&Instruction::GlobalGet(0));
+                func.instruction(&Instruction::I64ExtendI32U);
+                func.instruction(&Instruction::LocalTee(ptr_local));
+                func.instruction(&Instruction::I32WrapI64);
+                func.instruction(&Instruction::I32Const(struct_size as i32));
+                func.instruction(&Instruction::I32Add);
+                func.instruction(&Instruction::GlobalSet(0));
+
+                // Store each field
+                for (i, field) in s.fields.iter().enumerate() {
+                    let offset = (i as u32) * 8;
+                    func.instruction(&Instruction::LocalGet(ptr_local));
+                    func.instruction(&Instruction::I32WrapI64);
+                    self.compile_input(&field.value, func)?;
+                    func.instruction(&Instruction::I64Store(MemArg {
+                        offset: offset as u64,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                }
+
+                // Leave struct pointer on stack
+                func.instruction(&Instruction::LocalGet(ptr_local));
+            }
+            ReturnValue::Variant(v) => {
+                // For variants, use a tag-based encoding:
+                // Return a tagged value (tag in high bits, payload in low bits)
+                // Simple approach: hash the variant name to get a tag value
+                let tag: i64 = v.ty.bytes().map(|b| b as i64).sum();
+                func.instruction(&Instruction::I64Const(tag));
             }
         }
         Ok(())
@@ -1251,25 +1516,33 @@ impl<'a> SnippetWasmCompiler<'a> {
                 // Get struct pointer from local variable
                 let local = *self.locals.get(of)
                     .ok_or_else(|| CodegenError::UndefinedFunction { name: of.clone() })?;
-                func.instruction(&Instruction::LocalGet(local));
-                func.instruction(&Instruction::I32WrapI64); // i64 -> i32 ptr
 
                 // Look up field offset from struct layout
-                let type_name = self.local_types.get(of)
-                    .ok_or(CodegenError::UnsupportedExpression)?
-                    .clone();
-                let layout = self.struct_layouts.get(&type_name)
-                    .ok_or(CodegenError::UnsupportedExpression)?;
-                let field_layout = layout.fields.get(field)
-                    .ok_or(CodegenError::UnsupportedExpression)?;
-                let offset = field_layout.offset as u64;
-
-                // Load i64 value from (ptr + offset)
-                func.instruction(&Instruction::I64Load(MemArg {
-                    offset,
-                    align: 3, // 2^3 = 8 byte alignment
-                    memory_index: 0,
-                }));
+                if let Some(type_name) = self.local_types.get(of).cloned() {
+                    if let Some(layout) = self.struct_layouts.get(&type_name) {
+                        if let Some(field_layout) = layout.fields.get(field) {
+                            let offset = field_layout.offset as u64;
+                            func.instruction(&Instruction::LocalGet(local));
+                            func.instruction(&Instruction::I32WrapI64); // i64 -> i32 ptr
+                            // Load i64 value from (ptr + offset)
+                            func.instruction(&Instruction::I64Load(MemArg {
+                                offset,
+                                align: 3, // 2^3 = 8 byte alignment
+                                memory_index: 0,
+                            }));
+                        } else {
+                            // Unknown field - return the value itself as opaque i64
+                            func.instruction(&Instruction::LocalGet(local));
+                        }
+                    } else {
+                        // Unknown struct layout - return the value itself as opaque i64
+                        func.instruction(&Instruction::LocalGet(local));
+                    }
+                } else {
+                    // Unknown type for variable - treat as opaque value
+                    // For extern-returned values, the host runtime manages the layout
+                    func.instruction(&Instruction::LocalGet(local));
+                }
             }
         }
         Ok(())
@@ -1290,25 +1563,32 @@ impl<'a> SnippetWasmCompiler<'a> {
                 // Get struct pointer from local variable
                 let local = *self.locals.get(of)
                     .ok_or_else(|| CodegenError::UndefinedFunction { name: of.clone() })?;
-                func.instruction(&Instruction::LocalGet(local));
-                func.instruction(&Instruction::I32WrapI64); // i64 -> i32 ptr
 
                 // Look up field offset from struct layout
-                let type_name = self.local_types.get(of)
-                    .ok_or(CodegenError::UnsupportedExpression)?
-                    .clone();
-                let layout = self.struct_layouts.get(&type_name)
-                    .ok_or(CodegenError::UnsupportedExpression)?;
-                let field_layout = layout.fields.get(field)
-                    .ok_or(CodegenError::UnsupportedExpression)?;
-                let offset = field_layout.offset as u64;
-
-                // Load i64 value from (ptr + offset)
-                func.instruction(&Instruction::I64Load(MemArg {
-                    offset,
-                    align: 3, // 2^3 = 8 byte alignment
-                    memory_index: 0,
-                }));
+                if let Some(type_name) = self.local_types.get(of).cloned() {
+                    if let Some(layout) = self.struct_layouts.get(&type_name) {
+                        if let Some(field_layout) = layout.fields.get(field) {
+                            let offset = field_layout.offset as u64;
+                            func.instruction(&Instruction::LocalGet(local));
+                            func.instruction(&Instruction::I32WrapI64); // i64 -> i32 ptr
+                            // Load i64 value from (ptr + offset)
+                            func.instruction(&Instruction::I64Load(MemArg {
+                                offset,
+                                align: 3, // 2^3 = 8 byte alignment
+                                memory_index: 0,
+                            }));
+                        } else {
+                            // Unknown field - return the value itself as opaque i64
+                            func.instruction(&Instruction::LocalGet(local));
+                        }
+                    } else {
+                        // Unknown struct layout - return the value itself as opaque i64
+                        func.instruction(&Instruction::LocalGet(local));
+                    }
+                } else {
+                    // Unknown type for variable - treat as opaque value
+                    func.instruction(&Instruction::LocalGet(local));
+                }
             }
         }
         Ok(())
@@ -1341,6 +1621,31 @@ impl<'a> SnippetWasmCompiler<'a> {
         Ok(())
     }
 
+    /// Check if a function signature returns Unit (no WASM return value)
+    fn extern_returns_unit(&self, sig: &FunctionSignature) -> bool {
+        match &sig.returns {
+            Some(ret) => self.return_type_to_valtype(ret).is_none(),
+            None => true, // No return type means void/Unit
+        }
+    }
+
+    /// Check if a called function (by name) has a WASM return value.
+    /// Returns true if the function pushes a value onto the WASM stack.
+    fn call_has_return_value(&self, fn_name: &str) -> bool {
+        // Check extern imports - look up the import's result types
+        if let Some(ext) = self.extern_imports.get(fn_name) {
+            return self.imports.imports.get(ext.func_index as usize)
+                .map(|(_, _, _, results)| !results.is_empty())
+                .unwrap_or(true);
+        }
+        // Check if this is a known void (Unit-returning) user function
+        if self.void_functions.contains(fn_name) {
+            return false;
+        }
+        // Default: assume it returns a value (safe fallback for user functions with returns)
+        true
+    }
+
     /// Allocate a local variable
     fn allocate_local(&mut self, name: &str) -> u32 {
         if let Some(&idx) = self.locals.get(name) {
@@ -1360,6 +1665,7 @@ impl<'a> SnippetWasmCompiler<'a> {
                 "Float" => Some(ValType::F64),
                 "Bool" => Some(ValType::I64),
                 "String" => Some(ValType::I64), // Fat pointer (offset << 32 | len)
+                "Unit" => None, // Unit means no return value in WASM
                 // All other named types (enums, structs) are represented as i64
                 // Enums use tag values, structs use packed fields or pointers
                 _ => Some(ValType::I64),

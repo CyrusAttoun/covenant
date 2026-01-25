@@ -1,6 +1,36 @@
 // Effect Granularity - mixed purity in a module
 // Shows how different snippets have different effect requirements
 
+snippet id="format" kind="extern"
+
+signature
+  fn name="format"
+    param name="template" type="String"
+    param name="a" type="Any"
+    param name="b" type="Any"
+    param name="c" type="Any"
+    returns type="String"
+  end
+end
+
+end
+
+
+snippet id="now" kind="extern"
+
+effects
+  effect datetime
+end
+
+signature
+  fn name="now"
+    returns type="Date"
+  end
+end
+
+end
+
+
 snippet id="utils.format_date" kind="fn"
 
 // Pure - no effects section

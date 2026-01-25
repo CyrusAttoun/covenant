@@ -1,5 +1,25 @@
 // Multiple Effects - combining capabilities
 
+snippet id="http.post" kind="extern"
+
+effects
+  effect network
+end
+
+signature
+  fn name="post"
+    param name="url" type="String"
+    param name="body" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+end
+
+
 snippet id="upload.upload_file" kind="fn"
 
 effects

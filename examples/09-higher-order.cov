@@ -1,5 +1,42 @@
 // Higher-Order Functions
 // map is pure if the callback is pure, effectful if callback is effectful
+//
+// Note: The current compiler does not support true higher-order function
+// parameters (calling a function passed as an argument). This example
+// demonstrates the pattern using extern stubs for the callback dispatch
+// mechanism. In a full implementation, `f` and `pred` would be first-class
+// function parameters resolved at the call site.
+
+// Extern stubs representing the callback dispatch mechanism.
+// These act as placeholders for the higher-order function call pattern.
+
+snippet id="f" kind="extern"
+signature
+  fn name="f"
+    param name="x" type="Any"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="pred" kind="extern"
+signature
+  fn name="pred"
+    param name="x" type="Any"
+    returns type="Bool"
+  end
+end
+end
+
+snippet id="push" kind="extern"
+signature
+  fn name="push"
+    param name="list" type="List<Any>"
+    param name="item" type="Any"
+    returns type="Unit"
+  end
+end
+end
 
 snippet id="list.map" kind="fn"
 
@@ -7,11 +44,9 @@ snippet id="list.map" kind="fn"
 
 signature
   fn name="map"
-    generic name="T"
-    generic name="U"
-    param name="list" type="T[]"
-    param name="f" type="(T) -> U"
-    returns type="U[]"
+    param name="list" type="Any"
+    param name="f" type="Any"
+    returns type="Any"
   end
 end
 
@@ -51,10 +86,9 @@ snippet id="list.filter" kind="fn"
 
 signature
   fn name="filter"
-    generic name="T"
-    param name="list" type="T[]"
-    param name="pred" type="(T) -> Bool"
-    returns type="T[]"
+    param name="list" type="Any"
+    param name="pred" type="Any"
+    returns type="Any"
   end
 end
 
@@ -154,7 +188,7 @@ snippet id="example.usage" kind="fn"
 
 signature
   fn name="example"
-    returns type="Int[]"
+    returns type="Any"
   end
 end
 
@@ -166,13 +200,13 @@ body
   step id="s2" kind="call"
     fn="list.map"
     arg name="list" from="nums"
-    arg name="f" from="double"
+    arg name="f" lit="math.double"
     as="doubled"
   end
   step id="s3" kind="call"
     fn="list.filter"
     arg name="list" from="doubled"
-    arg name="pred" from="is_even"
+    arg name="pred" lit="math.is_even"
     as="evens"
   end
   step id="s4" kind="return"

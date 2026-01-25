@@ -301,7 +301,7 @@ body
   end
 
   step id="s2" kind="return"
-    from="new_order"
+    from="transaction_result"
     as="_"
   end
 end

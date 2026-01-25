@@ -26,6 +26,55 @@ end
 end
 
 
+snippet id="listen" kind="extern"
+
+effects
+  effect http_server
+end
+
+signature
+  fn name="listen"
+    param name="port" type="Int"
+    returns type="Server"
+  end
+end
+
+end
+
+
+snippet id="requests" kind="extern"
+
+effects
+  effect http_server
+end
+
+signature
+  fn name="requests"
+    param name="server" type="Server"
+    returns type="List<Request>"
+  end
+end
+
+end
+
+
+snippet id="respond" kind="extern"
+
+effects
+  effect http_server
+end
+
+signature
+  fn name="respond"
+    param name="req" type="Request"
+    param name="response" type="Response"
+    returns type="Unit"
+  end
+end
+
+end
+
+
 snippet id="http.handle_request" kind="fn"
 
 // Pure routing logic - no effects needed

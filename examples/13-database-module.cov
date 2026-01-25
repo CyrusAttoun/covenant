@@ -35,10 +35,7 @@ end
 
 signature
   fn name="get_active_users"
-    returns union
-      type="User[]"
-      type="DbError"
-    end
+    returns type="Any"
   end
 end
 
@@ -121,6 +118,25 @@ body
     where
       equals field="id" var="post_id"
     end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="days_ago" kind="fn"
+
+signature
+  fn name="days_ago"
+    param name="n" type="Int"
+    returns type="Any"
+  end
+end
+
+body
+  step id="s1" kind="return"
+    from="n"
     as="_"
   end
 end

@@ -202,3 +202,27 @@ metadata
 end
 
 end
+
+
+// Entry point that demonstrates the extern bindings are available
+snippet id="extern_bindings.main" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="main"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="console.println"
+    arg name="msg" lit="External bindings example: http.get, http.post, fs.read_file, fs.write_file, crypto.sha256, crypto.random_bytes, db.query, db.connect are available."
+    as="_"
+  end
+end
+
+end

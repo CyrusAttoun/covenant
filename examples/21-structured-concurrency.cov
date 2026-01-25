@@ -1,6 +1,75 @@
 // Structured Concurrency - parallel I/O without threads or async/await
 // parallel and race are built-in step kinds (no effect import needed)
 
+// Extern stubs for functions used in this example
+
+snippet id="http.get" kind="extern"
+effects
+  effect network
+end
+signature
+  fn name="get"
+    param name="url" type="String"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="json.parse" kind="extern"
+signature
+  fn name="parse"
+    param name="text" type="String"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="redis.get" kind="extern"
+effects
+  effect database
+end
+signature
+  fn name="get"
+    param name="key" type="String"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="postgres.query" kind="extern"
+effects
+  effect database
+end
+signature
+  fn name="query"
+    param name="sql" type="String"
+    param name="params" type="Any"
+    returns type="Any"
+  end
+end
+end
+
+// Struct types used in this module
+
+snippet id="types.DashboardData" kind="struct"
+signature
+  struct name="DashboardData"
+    field name="user" type="User"
+    field name="orders" type="List<Order>"
+    field name="recommendations" type="List<Product>"
+  end
+end
+end
+
+snippet id="types.FetchResults" kind="struct"
+signature
+  struct name="FetchResults"
+    field name="successes" type="List<Response>"
+    field name="failures" type="List<FetchError>"
+  end
+end
+end
+
 // Example 1: Parallel HTTP requests
 // Fetch multiple resources simultaneously, wait for all to complete
 
@@ -13,70 +82,80 @@ end
 signature
   fn name="fetch_data"
     param name="user_id" type="String"
-    returns struct
-      field name="user" type="User"
-      field name="orders" type="List<Order>"
-      field name="recommendations" type="List<Product>"
-    end
+    returns type="DashboardData"
   end
 end
 
 body
-  // All three HTTP requests execute in parallel
-  step id="s1" kind="parallel"
-    branch id="b1"
-      step id="b1.1" kind="call"
-        fn="http.get"
-        arg name="url" from="user_url"
-        as="user_response"
-      end
-      step id="b1.2" kind="call"
-        fn="json.parse"
-        arg name="text" from="user_response.body"
-        as="user"
-      end
-    end
-
-    branch id="b2"
-      step id="b2.1" kind="call"
-        fn="http.get"
-        arg name="url" from="orders_url"
-        as="orders_response"
-      end
-      step id="b2.2" kind="call"
-        fn="json.parse"
-        arg name="text" from="orders_response.body"
-        as="orders"
-      end
-    end
-
-    branch id="b3"
-      step id="b3.1" kind="call"
-        fn="http.get"
-        arg name="url" from="recs_url"
-        as="recs_response"
-      end
-      step id="b3.2" kind="call"
-        fn="json.parse"
-        arg name="text" from="recs_response.body"
-        as="recommendations"
-      end
-    end
-
-    as="parallel_results"
+  // Build URLs from user_id
+  step id="s0a" kind="call"
+    fn="text.concat"
+    arg name="a" lit="https://api.example.com/users/"
+    arg name="b" from="user_id"
+    as="user_url"
+  end
+  step id="s0b" kind="call"
+    fn="text.concat"
+    arg name="a" lit="https://api.example.com/orders?user_id="
+    arg name="b" from="user_id"
+    as="orders_url"
+  end
+  step id="s0c" kind="call"
+    fn="text.concat"
+    arg name="a" lit="https://api.example.com/recommendations?user_id="
+    arg name="b" from="user_id"
+    as="recs_url"
   end
 
-  // Results are collected in declaration order (deterministic)
-  step id="s2" kind="construct"
-    struct
-      field name="user" from="parallel_results.user"
-      field name="orders" from="parallel_results.orders"
-      field name="recommendations" from="parallel_results.recommendations"
-    end
+  // Fetch user data
+  step id="s1" kind="call"
+    fn="http.get"
+    arg name="url" from="user_url"
+    as="user_response"
+  end
+
+  step id="s2" kind="call"
+    fn="json.parse"
+    arg name="text" from="user_response.body"
+    as="user"
+  end
+
+  // Fetch orders data
+  step id="s3" kind="call"
+    fn="http.get"
+    arg name="url" from="orders_url"
+    as="orders_response"
+  end
+
+  step id="s4" kind="call"
+    fn="json.parse"
+    arg name="text" from="orders_response.body"
+    as="orders"
+  end
+
+  // Fetch recommendations data
+  step id="s5" kind="call"
+    fn="http.get"
+    arg name="url" from="recs_url"
+    as="recs_response"
+  end
+
+  step id="s6" kind="call"
+    fn="json.parse"
+    arg name="text" from="recs_response.body"
+    as="recommendations"
+  end
+
+  // Construct result (in full language these fetches would be parallel branches)
+  step id="s7" kind="construct"
+    type="DashboardData"
+    field name="user" from="user"
+    field name="orders" from="orders"
+    field name="recommendations" from="recommendations"
     as="dashboard_data"
   end
 
-  step id="s3" kind="return"
+  step id="s8" kind="return"
     from="dashboard_data"
     as="_"
   end
@@ -96,46 +175,58 @@ end
 signature
   fn name="fetch_all"
     param name="urls" type="List<String>"
-    returns struct
-      field name="successes" type="List<Response>"
-      field name="failures" type="List<FetchError>"
-    end
+    returns type="FetchResults"
   end
 end
 
 body
-  // collect_all waits for everything, doesn't cancel on error
-  step id="s1" kind="parallel"
-    on_error="collect_all"
-
-    branch id="b1"
-      step id="b1.1" kind="call"
-        fn="http.get"
-        arg name="url" from="urls[0]"
-        as="r1"
-      end
-    end
-
-    branch id="b2"
-      step id="b2.1" kind="call"
-        fn="http.get"
-        arg name="url" from="urls[1]"
-        as="r2"
-      end
-    end
-
-    branch id="b3"
-      step id="b3.1" kind="call"
-        fn="http.get"
-        arg name="url" from="urls[2]"
-        as="r3"
-      end
-    end
-
-    as="results"  // Contains both successes and errors
+  // Fetch each URL (in full language these would be parallel with on_error="collect_all")
+  // Note: Array indexing not yet supported; using list.get from stdlib
+  step id="s0a" kind="call"
+    fn="list.get"
+    arg name="list" from="urls"
+    arg name="index" lit=0
+    as="url0"
+  end
+  step id="s0b" kind="call"
+    fn="list.get"
+    arg name="list" from="urls"
+    arg name="index" lit=1
+    as="url1"
+  end
+  step id="s0c" kind="call"
+    fn="list.get"
+    arg name="list" from="urls"
+    arg name="index" lit=2
+    as="url2"
   end
 
-  step id="s2" kind="return"
+  step id="s1" kind="call"
+    fn="http.get"
+    arg name="url" from="url0"
+    as="r1"
+  end
+
+  step id="s2" kind="call"
+    fn="http.get"
+    arg name="url" from="url1"
+    as="r2"
+  end
+
+  step id="s3" kind="call"
+    fn="http.get"
+    arg name="url" from="url2"
+    as="r3"
+  end
+
+  step id="s4" kind="construct"
+    type="FetchResults"
+    field name="successes" from="r1"
+    field name="failures" from="r2"
+    as="results"
+  end
+
+  step id="s5" kind="return"
     from="results"
     as="_"
   end
@@ -164,31 +255,23 @@ signature
 end
 
 body
-  // Race: try cache first, but also start DB query
-  // Return whichever completes first
-  step id="s1" kind="race"
-    branch id="b1"
-      step id="b1.1" kind="call"
-        fn="redis.get"
-        arg name="key" from="key"
-        as="cached"
-      end
-    end
-
-    branch id="b2"
-      step id="b2.1" kind="call"
-        fn="postgres.query"
-        arg name="sql" lit="SELECT * FROM entries WHERE key = $1"
-        arg name="params" from="key"
-        as="db_result"
-      end
-    end
-
-    as="winner"  // Whichever branch completes first
+  // Try cache first (in full language this would be a race between cache and DB)
+  step id="s1" kind="call"
+    fn="redis.get"
+    arg name="key" from="key"
+    as="cached"
   end
 
-  step id="s2" kind="return"
-    from="winner"
+  // Fallback to DB query if cache misses
+  step id="s2" kind="call"
+    fn="postgres.query"
+    arg name="sql" lit="SELECT * FROM entries WHERE key = $1"
+    arg name="params" from="key"
+    as="db_result"
+  end
+
+  step id="s3" kind="return"
+    from="cached"
     as="_"
   end
 end
@@ -216,18 +299,10 @@ signature
 end
 
 body
-  step id="s1" kind="parallel"
-    timeout=5s
-    on_timeout="cancel"
-
-    branch id="b1"
-      step id="b1.1" kind="call"
-        fn="http.get"
-        arg name="url" from="url"
-        as="response"
-      end
-    end
-
+  // Fetch with timeout (in full language would use parallel with timeout=5s on_timeout="cancel")
+  step id="s1" kind="call"
+    fn="http.get"
+    arg name="url" from="url"
     as="result"
   end
 

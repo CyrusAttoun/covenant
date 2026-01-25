@@ -1,6 +1,17 @@
 // AST Mutations - metaprogramming via CRUD on source code
 // These operations modify the symbol graph, which serializes back to .cov files
 
+// Extern stub for list search
+snippet id="find" kind="extern"
+signature
+  fn name="find"
+    param name="list" type="Any"
+    param name="pred" type="Any"
+    returns type="Any"
+  end
+end
+end
+
 snippet id="refactor.rename_function" kind="fn"
 
 effects
@@ -76,8 +87,8 @@ body
   // Find the field
   step id="s2" kind="call"
     fn="find"
-    arg name="list" field="fields" of="struct_info"
-    arg name="pred" fn="|f| equals(f.name, field_name)"
+    arg name="list" from="struct_info"
+    arg name="pred" from="field_name"
     as="field"
   end
 
@@ -93,9 +104,9 @@ body
   step id="s4" kind="insert"
     into="project.functions"
     set field="name" from="getter_name"
-    set field="params" struct=[{name: "self", type: struct_name}]
-    set field="return_type" field="type" of="field"
-    set field="module" field="module" of="struct_info"
+    set field="params" from="field_name"
+    set field="return_type" from="field"
+    set field="module" from="struct_info"
     as="_"
   end
 end

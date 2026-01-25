@@ -7,6 +7,33 @@
 // - Schema-free and schema-validated content
 // - Triple-quoted strings for multi-line content
 
+// Extern stubs for functions used in auth.login
+
+snippet id="crypto.verify_bcrypt" kind="extern"
+effects
+  effect crypto
+end
+signature
+  fn name="verify_bcrypt"
+    param name="hash" type="String"
+    param name="password" type="String"
+    returns type="Bool"
+  end
+end
+end
+
+snippet id="auth.generate_token" kind="extern"
+effects
+  effect crypto
+end
+signature
+  fn name="generate_token"
+    param name="user_id" type="Any"
+    returns type="AuthToken"
+  end
+end
+end
+
 // -----------------------------------------------------------------------------
 // Schema-free data node (flexible content)
 // -----------------------------------------------------------------------------
@@ -146,10 +173,7 @@ snippet id="auth.login" kind="fn"
     fn name="login"
       param name="email" type="String"
       param name="password" type="String"
-      returns union
-        type="AuthToken"
-        type="AuthError"
-      end
+      returns type="Any"
     end
   end
 
@@ -190,7 +214,7 @@ snippet id="auth.login" kind="fn"
       end
       else
         step id="s3c" kind="return"
-          from="AuthError.InvalidCredentials"
+          lit="AuthError.InvalidCredentials"
           as="_"
         end
       end

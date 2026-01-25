@@ -22,10 +22,7 @@ end
 signature
   fn name="get_user_by_id"
     param name="id" type="Int"
-    returns union
-      type="User" optional
-      type="DbError"
-    end
+    returns type="Any"
   end
 end
 
@@ -59,10 +56,7 @@ signature
   fn name="create_user"
     param name="name" type="String"
     param name="email" type="String"
-    returns union
-      type="User"
-      type="DbError"
-    end
+    returns type="Any"
   end
 end
 

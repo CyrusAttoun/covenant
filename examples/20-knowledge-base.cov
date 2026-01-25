@@ -455,10 +455,7 @@ snippet id="kb_tools.add_relation" kind="fn"
       param name="from_id" type="String"
       param name="to_id" type="String"
       param name="rel_type" type="RelationType"
-      returns union
-        type="Success"
-        type="NotFoundError"
-      end
+      returns type="Any"
     end
   end
 
@@ -497,13 +494,13 @@ snippet id="kb_tools.add_relation" kind="fn"
           as="_"
         end
         step id="s3b" kind="return"
-          from="Success"
+          lit="Success"
           as="_"
         end
       end
       else
         step id="s3c" kind="return"
-          from="NotFoundError"
+          lit="NotFoundError"
           as="_"
         end
       end

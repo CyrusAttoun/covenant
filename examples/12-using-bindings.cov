@@ -1,5 +1,24 @@
 // Using External Bindings
 
+snippet id="http.get" kind="extern"
+
+effects
+  effect network
+end
+
+signature
+  fn name="get"
+    param name="url" type="String"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+end
+
+
 snippet id="fetch.fetch_and_save" kind="fn"
 
 effects

@@ -1,13 +1,13 @@
-// Example 30: Documentation Ingestion Tool
+// Example 30: Documentation Processing Demo
 //
 // Demonstrates:
-// - Recursive directory scanning with fs.readDir
-// - Reading file contents and transforming them
-// - Building .cov data node files as strings
-// - Writing generated output to disk
-// - For-loop iteration over collections
+// - Directory scanning with fs.readDir
+// - For-loop iteration over directory entries
+// - Reading file contents
 // - String operations (concat, replace, split, slice)
-// - Conditional branching and pattern matching
+// - Conditional branching
+// - Path manipulation
+// - File output
 
 // =============================================================================
 // Entry Point
@@ -30,198 +30,83 @@ signature
 end
 
 body
-  step id="s1" kind="bind"
-    lit="docs"
-    as="source_dir"
+  step id="s1" kind="call"
+    fn="console.println"
+    arg name="message" lit="Documentation ingestion demo starting..."
+    as="_"
   end
 
+  // Input directory to scan
   step id="s2" kind="bind"
-    lit="output/docs"
+    lit="docs/guide"
+    as="input_dir"
+  end
+
+  step id="s3" kind="bind"
+    lit="output"
     as="output_dir"
   end
 
   // Create output directory
-  step id="s3" kind="call"
+  step id="s4" kind="call"
     fn="fs.mkdir"
     arg name="path" from="output_dir"
     arg name="recursive" lit=true
     as="_"
   end
 
-  // Discover all documentation files recursively
-  step id="s4" kind="call"
-    fn="doc_ingest.scan_dir_recursive"
-    arg name="dir_path" from="source_dir"
-    as="all_files"
-  end
-
+  // Read directory contents
   step id="s5" kind="call"
-    fn="console.println"
-    arg name="message" lit="Starting documentation ingestion..."
-    as="_"
+    fn="fs.readDir"
+    arg name="path" from="input_dir"
+    as="entries"
   end
 
-  // Process each discovered file
+  // Process each file in the directory
   step id="s6" kind="for"
-    var="file_path" in="all_files"
+    var="entry" in="entries"
 
-    step id="s6a" kind="call"
-      fn="doc_ingest.process_file"
-      arg name="file_path" from="file_path"
-      arg name="output_dir" from="output_dir"
-      as="result"
-    end
+    step id="s6a" kind="if"
+      condition="entry.is_file"
+      then
+        // Build full path
+        step id="s6b" kind="call"
+          fn="path.join"
+          arg name="base" from="input_dir"
+          arg name="segment" from="entry.name"
+          as="file_path"
+        end
 
-    step id="s6b" kind="call"
-      fn="text.concat"
-      arg name="a" lit="  Processed: "
-      arg name="b" from="file_path"
-      as="msg"
-    end
+        // Process the file
+        step id="s6c" kind="call"
+          fn="doc_ingest.process_file"
+          arg name="file_path" from="file_path"
+          arg name="output_dir" from="output_dir"
+          as="output_path"
+        end
 
-    step id="s6c" kind="call"
-      fn="console.println"
-      arg name="message" from="msg"
+        // Print the created file path
+        step id="s6d" kind="call"
+          fn="text.concat"
+          arg name="a" lit="Created: "
+          arg name="b" from="output_path"
+          as="created_msg"
+        end
+
+        step id="s6e" kind="call"
+          fn="console.println"
+          arg name="message" from="created_msg"
+          as="_"
+        end
+      end
       as="_"
     end
-
     as="_"
   end
 
   step id="s7" kind="call"
     fn="console.println"
-    arg name="message" lit="Documentation ingestion complete."
-    as="_"
-  end
-end
-
-end
-
-// =============================================================================
-// Recursive Directory Scanner
-// =============================================================================
-
-snippet id="doc_ingest.scan_dir_recursive" kind="fn"
-
-effects
-  effect filesystem
-end
-
-signature
-  fn name="scan_dir_recursive"
-    param name="dir_path" type="String"
-    returns union
-      type="List<String>"
-      type="IoError"
-    end
-  end
-end
-
-body
-  // Read directory entries
-  step id="s1" kind="call"
-    fn="fs.readDir"
-    arg name="path" from="dir_path"
-    as="entries"
-  end
-
-  // Iterate over entries, collecting file paths
-  step id="s2" kind="for"
-    var="entry" in="entries"
-
-    // Build full path
-    step id="s2a" kind="call"
-      fn="path.join"
-      arg name="base" from="dir_path"
-      arg name="segment" from="entry.name"
-      as="full_path"
-    end
-
-    step id="s2b" kind="if"
-      condition="entry.is_directory"
-      then
-        // Recurse into subdirectory
-        step id="s2b1" kind="call"
-          fn="doc_ingest.scan_dir_recursive"
-          arg name="dir_path" from="full_path"
-          as="sub_files"
-        end
-      end
-      else
-        // Check if file has a supported extension
-        step id="s2c1" kind="call"
-          fn="path.extname"
-          arg name="path" from="full_path"
-          as="ext"
-        end
-
-        step id="s2c2a" kind="compute"
-          op=equals
-          input var="ext"
-          input lit=".md"
-          as="is_md"
-        end
-
-        step id="s2c2b" kind="compute"
-          op=equals
-          input var="ext"
-          input lit=".ebnf"
-          as="is_ebnf"
-        end
-
-        step id="s2c2c" kind="compute"
-          op=equals
-          input var="ext"
-          input lit=".json"
-          as="is_json"
-        end
-
-        step id="s2c2d" kind="compute"
-          op=or
-          input var="is_ebnf"
-          input var="is_json"
-          as="is_ebnf_or_json"
-        end
-
-        step id="s2c2e" kind="compute"
-          op=or
-          input var="is_md"
-          input var="is_ebnf_or_json"
-          as="is_supported"
-        end
-
-        step id="s2c3" kind="if"
-          condition="is_supported"
-          then
-            step id="s2c3a" kind="bind"
-              from="full_path"
-              as="matched"
-            end
-          end
-          else
-            step id="s2c3b" kind="bind"
-              lit=none
-              as="matched"
-            end
-          end
-          as="_"
-        end
-      end
-      as="collected"
-    end
-
-    as="raw_results"
-  end
-
-  // Flatten the nested results into a single list
-  step id="s3" kind="call"
-    fn="list.flatten"
-    arg name="list" from="raw_results"
-    as="flat_files"
-  end
-
-  step id="s4" kind="return"
-    from="flat_files"
+    arg name="message" lit="Documentation ingestion demo complete."
     as="_"
   end
 end
@@ -243,7 +128,7 @@ signature
     param name="file_path" type="String"
     param name="output_dir" type="String"
     returns union
-      type="Unit"
+      type="String"
       type="IoError"
     end
   end
@@ -328,6 +213,12 @@ body
     fn="fs.write_file"
     arg name="path" from="output_path"
     arg name="content" from="cov_content"
+    as="_"
+  end
+
+  // Return the output path
+  step id="s12" kind="return"
+    from="output_path"
     as="_"
   end
 end

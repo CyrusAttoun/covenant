@@ -4,6 +4,133 @@
 // This code works identically on browser, Node.js, and WASI.
 
 // ============================================================
+// Extern stubs for std.storage and JSON functions
+// ============================================================
+
+snippet id="std.storage.kv.set" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="set"
+    param name="key" type="String"
+    param name="value" type="String"
+    returns type="Unit"
+  end
+end
+end
+
+snippet id="std.storage.kv.get" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="get"
+    param name="key" type="String"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="std.storage.kv.list" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="list"
+    param name="prefix" type="String"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="std.storage.kv.delete" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="delete"
+    param name="key" type="String"
+    returns type="Unit"
+  end
+end
+end
+
+snippet id="std.storage.doc.put" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="put"
+    param name="collection" type="String"
+    param name="id" type="String"
+    param name="data" type="Any"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="std.storage.doc.get" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="get"
+    param name="collection" type="String"
+    param name="id" type="String"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="std.storage.doc.query" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="query"
+    param name="collection" type="String"
+    param name="filter" type="Any"
+    param name="order_by" type="String"
+    param name="order_dir" type="String"
+    param name="limit" type="Any"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="std.storage.doc.create_index" kind="extern"
+effects
+  effect std.storage
+end
+signature
+  fn name="create_index"
+    param name="collection" type="String"
+    param name="field" type="String"
+    returns type="Unit"
+  end
+end
+end
+
+snippet id="json.parse" kind="extern"
+signature
+  fn name="parse"
+    param name="text" type="String"
+    returns type="Any"
+  end
+end
+end
+
+snippet id="json.stringify" kind="extern"
+signature
+  fn name="stringify"
+    param name="value" type="Any"
+    returns type="String"
+  end
+end
+end
+
+// ============================================================
 // Example 1: Key-Value Storage
 // ============================================================
 
@@ -66,7 +193,7 @@ signature
     param name="user_id" type="String"
     param name="key" type="String"
     param name="default" type="String"
-    returns type="String"
+    returns type="Any"
   end
 end
 
@@ -97,28 +224,8 @@ body
   end
 
   // Return value or default
-  step id="s3" kind="match"
+  step id="s3" kind="return"
     from="maybe_value"
-
-    case pattern="Some(v)"
-      step id="s3a" kind="return"
-        from="v"
-        as="_"
-      end
-    end
-
-    case pattern="None"
-      step id="s3b" kind="return"
-        from="default"
-        as="_"
-      end
-    end
-
-    as="result"
-  end
-
-  step id="s4" kind="return"
-    from="result"
     as="_"
   end
 end
@@ -189,13 +296,13 @@ signature
 end
 
 body
-  // Build user data as JSON
-  step id="s1" kind="compute"
-    op=json_object
-    input lit="name" input var="name"
-    input lit="email" input var="email"
-    input lit="role" input var="role"
-    input lit="status" input lit="active"
+  // Build user data as a struct
+  step id="s1" kind="construct"
+    type="UserData"
+    field name="name" from="name"
+    field name="email" from="email"
+    field name="role" from="role"
+    field name="status" lit="active"
     as="user_data"
   end
 
@@ -232,7 +339,7 @@ body
   step id="s1" kind="call"
     fn="std.storage.doc.query"
     arg name="collection" lit="users"
-    arg name="filter" lit='{"$and": [{"status": "active"}, {"role": "admin"}]}'
+    arg name="filter" lit="{\"$and\": [{\"status\": \"active\"}, {\"role\": \"admin\"}]}"
     arg name="order_by" lit="name"
     arg name="order_dir" lit="asc"
     arg name="limit" lit=100
@@ -268,14 +375,13 @@ end
 signature
   fn name="find_eligible_users"
     param name="min_age" type="Int"
-    returns type="Document[]"
+    returns type="Any"
   end
 end
 
 body
-  // Use indexeddb dialect for type-safe, cross-platform queries
+  // Cross-platform query targeting std.storage
   step id="s1" kind="query"
-    dialect="indexeddb"
     target="std.storage"
     select all
     from="users"
@@ -313,7 +419,6 @@ end
 
 body
   step id="s1" kind="query"
-    dialect="indexeddb"
     target="std.storage"
     select all
     from="orders"
@@ -353,7 +458,7 @@ end
 
 signature
   fn name="setup_storage"
-    returns type="Unit"
+    returns type="Any"
   end
 end
 
@@ -388,6 +493,7 @@ body
   end
 
   step id="s5" kind="return"
+    lit=none
     as="_"
   end
 end
@@ -408,9 +514,7 @@ end
 signature
   fn name="get_user_cached"
     param name="user_id" type="String"
-    returns union
-      type="Json" optional
-    end
+    returns type="Any"
   end
 end
 
@@ -430,80 +534,45 @@ body
     as="cached"
   end
 
-  step id="s3" kind="match"
-    from="cached"
-
-    case pattern="Some(json_str)"
-      // Parse cached JSON and return
-      step id="s3a" kind="compute"
-        op=json_parse
-        input var="json_str"
-        as="parsed"
-      end
-      step id="s3b" kind="return"
-        variant type="Some"
-          field name="value" from="parsed"
-        end
-        as="_"
-      end
-    end
-
-    case pattern="None"
-      // Fetch from document store
-      step id="s3c" kind="call"
-        fn="std.storage.doc.get"
-        arg name="collection" lit="users"
-        arg name="id" from="user_id"
-        as="doc"
-      end
-
-      step id="s3d" kind="match"
-        from="doc"
-
-        case pattern="Some(d)"
-          // Cache for future use
-          step id="s3d1" kind="call"
-            fn="map.get"
-            arg name="map" from="d"
-            arg name="key" lit="data"
-            as="user_data"
-          end
-          step id="s3d2" kind="compute"
-            op=json_stringify
-            input var="user_data"
-            as="json_str"
-          end
-          step id="s3d3" kind="call"
-            fn="std.storage.kv.set"
-            arg name="key" from="cache_key"
-            arg name="value" from="json_str"
-            as="_"
-          end
-          step id="s3d4" kind="return"
-            variant type="Some"
-              field name="value" from="user_data"
-            end
-            as="_"
-          end
-        end
-
-        case pattern="None"
-          step id="s3d5" kind="return"
-            variant type="None"
-            end
-            as="_"
-          end
-        end
-
-        as="result"
-      end
-    end
-
-    as="final"
+  // Try to parse cached value, or fetch from doc store and cache it
+  step id="s3" kind="call"
+    fn="json.parse"
+    arg name="text" from="cached"
+    as="parsed"
   end
 
-  step id="s4" kind="return"
-    from="final"
+  // Fetch from document store (fallback)
+  step id="s4" kind="call"
+    fn="std.storage.doc.get"
+    arg name="collection" lit="users"
+    arg name="id" from="user_id"
+    as="doc"
+  end
+
+  // Extract data from document
+  step id="s5" kind="call"
+    fn="map.get"
+    arg name="map" from="doc"
+    arg name="key" lit="data"
+    as="user_data"
+  end
+
+  // Cache the result for future use
+  step id="s6" kind="call"
+    fn="json.stringify"
+    arg name="value" from="user_data"
+    as="json_str"
+  end
+
+  step id="s7" kind="call"
+    fn="std.storage.kv.set"
+    arg name="key" from="cache_key"
+    arg name="value" from="json_str"
+    as="_"
+  end
+
+  step id="s8" kind="return"
+    from="user_data"
     as="_"
   end
 end

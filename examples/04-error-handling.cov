@@ -33,6 +33,34 @@ end
 end
 
 
+snippet id="find_config_line" kind="extern"
+
+signature
+  fn name="find_config_line"
+    param name="input" type="String"
+    param name="prefix" type="String"
+    returns type="String" optional
+  end
+end
+
+end
+
+
+snippet id="parse_int" kind="extern"
+
+signature
+  fn name="parse_int"
+    param name="s" type="String"
+    returns union
+      type="Int"
+      type="ParseIntError"
+    end
+  end
+end
+
+end
+
+
 snippet id="config.parse" kind="fn"
 
 // Pure function - can still return errors for validation

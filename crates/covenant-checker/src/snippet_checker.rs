@@ -74,7 +74,7 @@ impl SnippetChecker {
         // First pass: register all types and function signatures
         for snippet in snippets {
             match snippet.kind {
-                SnippetKind::Function | SnippetKind::ExternAbstract => {
+                SnippetKind::Function | SnippetKind::Extern | SnippetKind::ExternAbstract => {
                     self.register_function_signature(snippet);
                 }
                 SnippetKind::Struct => self.register_struct_type(snippet),
@@ -785,9 +785,13 @@ impl SnippetChecker {
                 ResolvedType::Named { name: n1, args: a1, .. },
                 ResolvedType::Named { name: n2, args: a2, .. },
             ) => {
-                n1 == n2
-                    && a1.len() == a2.len()
-                    && a1.iter().zip(a2).all(|(t1, t2)| self.types_compatible(t1, t2))
+                if n1 == n2 {
+                    a1.len() == a2.len()
+                        && a1.iter().zip(a2).all(|(t1, t2)| self.types_compatible(t1, t2))
+                } else {
+                    // Check if n2 is a variant of n1 (e.g., "ParseError::MissingField" is a variant of "ParseError")
+                    n2.starts_with(&format!("{}::", n1))
+                }
             }
 
             // Struct types - all fields must match
@@ -1052,9 +1056,9 @@ impl SnippetChecker {
                 // Union types: each member type is a "variant"
                 Some(types.iter().map(|t| t.display()).collect())
             }
-            ResolvedType::Optional(inner) => {
-                // Optional is effectively a union of inner | None
-                Some(vec![inner.display(), "none".to_string()])
+            ResolvedType::Optional(_inner) => {
+                // Optional is effectively a union of Some | None
+                Some(vec!["Some".to_string(), "None".to_string()])
             }
             _ => None,
         }
@@ -1353,8 +1357,8 @@ mod tests {
         assert!(variants.is_some());
         let v = variants.unwrap();
         assert_eq!(v.len(), 2);
-        assert!(v.contains(&"Int".to_string()));
-        assert!(v.contains(&"none".to_string()));
+        assert!(v.contains(&"Some".to_string()));
+        assert!(v.contains(&"None".to_string()));
     }
 
     #[test]

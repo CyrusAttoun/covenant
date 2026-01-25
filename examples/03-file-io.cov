@@ -6,6 +6,18 @@
 // - Union return types for error handling
 // - How effects propagate from called functions
 
+snippet id="to_uppercase" kind="extern"
+
+signature
+  fn name="to_uppercase"
+    param name="s" type="String"
+    returns type="String"
+  end
+end
+
+end
+
+
 snippet id="main.file_transform" kind="fn"
 
 // EFFECTS: This function needs both filesystem and console access.
