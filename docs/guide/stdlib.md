@@ -14,10 +14,11 @@ All functions available in Covenant's standard library, organized by module. Eac
 6. [Process](#process)
 7. [OS/Environment](#osenvironment)
 8. [Path](#path)
-9. [Timers](#timers)
-10. [URL](#url)
-11. [Storage: Key-Value](#storage-key-value)
-12. [Storage: Document](#storage-document)
+9. [JSON](#json)
+10. [Timers](#timers)
+11. [URL](#url)
+12. [Storage: Key-Value](#storage-key-value)
+13. [Storage: Document](#storage-document)
 
 ---
 
@@ -167,7 +168,7 @@ end
 | `fs.write_bytes` | `path: String`, `content: Bytes` | `Unit \| IoError` | Write binary data to file |
 | `fs.remove` | `path: String` | `Unit \| IoError` | Delete file or directory |
 | `fs.stat` | `path: String` | `FileStat \| IoError` | Get file/directory metadata |
-| `fs.readDir` | `path: String` | `List<DirEntry> \| IoError` | List directory contents |
+| `fs.read_dir` | `path: String` | `List<DirEntry> \| IoError` | List directory contents |
 | `fs.exists` | `path: String` | `Bool` | Check if path exists |
 | `fs.mkdir` | `path: String`, `recursive: Bool` (optional) | `Unit \| IoError` | Create directory |
 | `fs.copy` | `src: String`, `dest: String` | `Unit \| IoError` | Copy file |
@@ -205,7 +206,7 @@ step id="s1" kind="call"
 end
 
 step id="s2" kind="call"
-  fn="fs.readDir"
+  fn="fs.read_dir"
   arg name="path" lit="./output"
   as="entries"
 end
@@ -539,6 +540,200 @@ body
     fn="path.resolve"
     arg name="path" lit="./relative/file.txt"
     as="absolute_path"
+  end
+end
+```
+
+---
+
+## JSON
+
+Parse and serialize JSON data. All functions are pure (no side effects).
+
+**Platforms:** deno, browser, node, wasi
+
+### Types
+
+```
+enum name="Json"
+  variant name="Null"
+  variant name="Bool"
+    field name="value" type="Bool"
+  end
+  variant name="Number"
+    field name="value" type="Float"
+  end
+  variant name="String"
+    field name="value" type="String"
+  end
+  variant name="Array"
+    field name="items" type="Json[]"
+  end
+  variant name="Object"
+    field name="fields" type="Map<String, Json>"
+  end
+end
+
+enum name="JsonError"
+  variant name="ParseError"
+    field name="message" type="String"
+    field name="line" type="Int"
+    field name="column" type="Int"
+  end
+  variant name="InvalidType"
+    field name="expected" type="String"
+    field name="actual" type="String"
+  end
+end
+```
+
+### Core Functions
+
+| Function | Parameters | Returns | Description |
+|----------|-----------|---------|-------------|
+| `json.parse` | `input: String` | `Json \| JsonError` | Parse JSON string into Json type |
+| `json.stringify` | `value: Json` | `String` | Serialize Json to compact JSON string |
+| `json.format` | `value: Json`, `indent: String` (optional) | `String` | Pretty-print JSON with indentation (default 2 spaces) |
+| `json.is_valid` | `input: String` | `Bool` | Check if string is valid JSON |
+
+### Type Guards
+
+| Function | Parameters | Returns |
+|----------|-----------|---------|
+| `json.is_object` | `value: Json` | `Bool` |
+| `json.is_array` | `value: Json` | `Bool` |
+| `json.is_string` | `value: Json` | `Bool` |
+| `json.is_number` | `value: Json` | `Bool` |
+| `json.is_bool` | `value: Json` | `Bool` |
+| `json.is_null` | `value: Json` | `Bool` |
+
+### Extraction Helpers
+
+| Function | Parameters | Returns | Description |
+|----------|-----------|---------|-------------|
+| `json.as_string` | `value: Json` | `String?` | Extract string value (returns none for other types) |
+| `json.as_number` | `value: Json` | `Float?` | Extract numeric value (returns none for other types) |
+| `json.as_bool` | `value: Json` | `Bool?` | Extract boolean value (returns none for other types) |
+| `json.get_field` | `obj: Json`, `key: String` | `Json?` | Extract field from object (returns none if not an object or key missing) |
+| `json.get_index` | `arr: Json`, `index: Int` | `Json?` | Extract element from array (returns none if not an array or out of bounds) |
+
+### Example: Parse and Extract Data
+
+```
+body
+  (* Parse JSON string *)
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" lit="{\"name\":\"Alice\",\"age\":30}"
+    as="result"
+  end
+
+  (* Extract name field *)
+  step id="s2" kind="call"
+    fn="json.get_field"
+    arg name="obj" from="result"
+    arg name="key" lit="name"
+    as="name_field"
+  end
+
+  (* Convert to string *)
+  step id="s3" kind="call"
+    fn="json.as_string"
+    arg name="value" from="name_field"
+    as="name"
+  end
+
+  (* name is now "Alice" *)
+end
+```
+
+### Example: Build and Serialize JSON
+
+```
+body
+  (* Build JSON object using variant construction *)
+  step id="s1" kind="construct"
+    variant type="Json::Object"
+      field name="fields" map
+        entry key="status" value variant type="Json::String"
+          field name="value" lit="success"
+        end
+        entry key="code" value variant type="Json::Number"
+          field name="value" lit=200.0
+        end
+      end
+    end
+    as="json_obj"
+  end
+
+  (* Serialize to string *)
+  step id="s2" kind="call"
+    fn="json.stringify"
+    arg name="value" from="json_obj"
+    as="json_str"
+  end
+
+  (* json_str is now "{\"status\":\"success\",\"code\":200}" *)
+end
+```
+
+### Example: Pretty-Print JSON
+
+```
+body
+  (* Parse compact JSON *)
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" lit="{\"a\":1,\"b\":2}"
+    as="parsed"
+  end
+
+  (* Format with 2-space indent *)
+  step id="s2" kind="call"
+    fn="json.format"
+    arg name="value" from="parsed"
+    arg name="indent" lit="  "
+    as="formatted"
+  end
+
+  (* formatted is now:
+  {
+    "a": 1,
+    "b": 2
+  }
+  *)
+end
+```
+
+### Error Handling
+
+```
+body
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" from="user_input"
+    as="result"
+  end
+
+  step id="s2" kind="match"
+    on="result"
+    case variant type="Json"
+      (* Successfully parsed JSON *)
+      step id="s2a" kind="call"
+        fn="process_json"
+        arg name="data" from="result"
+        as="_"
+      end
+    end
+    case variant type="JsonError::ParseError" bindings=("msg", "line", "col")
+      (* Handle parse error *)
+      step id="s2b" kind="call"
+        fn="console.error"
+        arg name="msg" from="msg"
+        as="_"
+      end
+    end
+    as="_"
   end
 end
 ```

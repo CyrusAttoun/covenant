@@ -1,0 +1,238 @@
+// JSON Validation Example
+// Demonstrates JSON validation and type checking
+
+snippet id="examples.json_validate" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="validate_and_process"
+    param name="input" type="String"
+    returns type="Unit"
+  end
+end
+
+body
+  (* First check if valid JSON *)
+  step id="s1" kind="call"
+    fn="json.is_valid"
+    arg name="input" from="input"
+    as="is_valid"
+  end
+
+  step id="s2" kind="match"
+    on="is_valid"
+    case lit=false
+      step id="s2a" kind="call"
+        fn="console.error"
+        arg name="msg" lit="Invalid JSON syntax"
+        as="_"
+      end
+      step id="s2b" kind="return"
+        variant type="Unit"
+        as="_"
+      end
+    end
+    case lit=true
+      (* Parse if valid *)
+      step id="s2c" kind="call"
+        fn="json.parse"
+        arg name="input" from="input"
+        as="parsed"
+      end
+
+      (* Check type *)
+      step id="s2d" kind="call"
+        fn="json.is_object"
+        arg name="value" from="parsed"
+        as="is_obj"
+      end
+
+      step id="s2e" kind="match"
+        on="is_obj"
+        case lit=true
+          step id="s2e1" kind="call"
+            fn="console.println"
+            arg name="msg" lit="Valid JSON object"
+            as="_"
+          end
+        end
+        case lit=false
+          step id="s2e2" kind="call"
+            fn="console.warn"
+            arg name="msg" lit="JSON is valid but not an object"
+            as="_"
+          end
+        end
+        as="_"
+      end
+
+      step id="s2f" kind="return"
+        variant type="Unit"
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="examples.json_type_checking" kind="fn"
+
+signature
+  fn name="check_all_types"
+    param name="value" type="Json"
+    returns type="String"
+  end
+end
+
+body
+  (* Check if object *)
+  step id="s1" kind="call"
+    fn="json.is_object"
+    arg name="value" from="value"
+    as="is_obj"
+  end
+
+  step id="s2" kind="match"
+    on="is_obj"
+    case lit=true
+      step id="s2a" kind="return"
+        lit="object"
+        as="_"
+      end
+    end
+    case lit=false
+      (* Check if array *)
+      step id="s2b" kind="call"
+        fn="json.is_array"
+        arg name="value" from="value"
+        as="is_arr"
+      end
+
+      step id="s2c" kind="match"
+        on="is_arr"
+        case lit=true
+          step id="s2c1" kind="return"
+            lit="array"
+            as="_"
+          end
+        end
+        case lit=false
+          (* Check if string *)
+          step id="s2c2" kind="call"
+            fn="json.is_string"
+            arg name="value" from="value"
+            as="is_str"
+          end
+
+          step id="s2c3" kind="match"
+            on="is_str"
+            case lit=true
+              step id="s2c3a" kind="return"
+                lit="string"
+                as="_"
+              end
+            end
+            case lit=false
+              (* Check if number *)
+              step id="s2c3b" kind="call"
+                fn="json.is_number"
+                arg name="value" from="value"
+                as="is_num"
+              end
+
+              step id="s2c3c" kind="match"
+                on="is_num"
+                case lit=true
+                  step id="s2c3c1" kind="return"
+                    lit="number"
+                    as="_"
+                  end
+                end
+                case lit=false
+                  (* Check if bool *)
+                  step id="s2c3c2" kind="call"
+                    fn="json.is_bool"
+                    arg name="value" from="value"
+                    as="is_bool"
+                  end
+
+                  step id="s2c3c3" kind="match"
+                    on="is_bool"
+                    case lit=true
+                      step id="s2c3c3a" kind="return"
+                        lit="bool"
+                        as="_"
+                      end
+                    end
+                    case lit=false
+                      (* Must be null *)
+                      step id="s2c3c3b" kind="return"
+                        lit="null"
+                        as="_"
+                      end
+                    end
+                    as="_"
+                  end
+                end
+                as="_"
+              end
+            end
+            as="_"
+          end
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="examples.json_round_trip" kind="fn"
+
+signature
+  fn name="round_trip_test"
+    param name="json_str" type="String"
+    returns type="Bool"
+  end
+end
+
+body
+  (* Parse *)
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" from="json_str"
+    as="parsed"
+  end
+
+  (* Stringify *)
+  step id="s2" kind="call"
+    fn="json.stringify"
+    arg name="value" from="parsed"
+    as="stringified"
+  end
+
+  (* Parse again *)
+  step id="s3" kind="call"
+    fn="json.parse"
+    arg name="input" from="stringified"
+    as="reparsed"
+  end
+
+  (* Both parse operations should succeed for valid JSON *)
+  (* In a real implementation, we'd compare the structures *)
+  step id="s4" kind="return"
+    lit=true
+    as="_"
+  end
+end
+
+end

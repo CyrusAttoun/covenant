@@ -1,0 +1,49 @@
+(* Node.js implementation of std.json using native JSON API *)
+
+snippet id="json.parse.node" kind="extern-impl"
+
+implements="json.parse"
+platform="node"
+
+metadata
+  contract="@node/json.parse"
+  description="Uses native JSON.parse() with try/catch for error handling"
+end
+
+end
+
+snippet id="json.stringify.node" kind="extern-impl"
+
+implements="json.stringify"
+platform="node"
+
+metadata
+  contract="@node/json.stringify"
+  description="Uses native JSON.stringify()"
+end
+
+end
+
+snippet id="json.format.node" kind="extern-impl"
+
+implements="json.format"
+platform="node"
+
+metadata
+  contract="@node/json.format"
+  description="Uses JSON.stringify(value, null, indent || '  ')"
+end
+
+end
+
+snippet id="json.is_valid.node" kind="extern-impl"
+
+implements="json.is_valid"
+platform="node"
+
+metadata
+  contract="@node/json.is_valid"
+  description="Tries JSON.parse() and returns false on exception"
+end
+
+end

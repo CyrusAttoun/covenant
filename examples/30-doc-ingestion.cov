@@ -1,7 +1,7 @@
 // Example 30: Documentation Processing Demo
 //
 // Demonstrates:
-// - Directory scanning with fs.readDir
+// - Directory scanning with fs.read_dir
 // - For-loop iteration over directory entries
 // - Reading file contents
 // - String operations (concat, replace, split, slice)
@@ -57,50 +57,45 @@ body
 
   // Read directory contents
   step id="s5" kind="call"
-    fn="fs.readDir"
+    fn="fs.read_dir"
     arg name="path" from="input_dir"
     as="entries"
   end
 
   // Process each file in the directory
   step id="s6" kind="for"
-    var="entry" in="entries"
+    var="filename" in="entries"
 
-    step id="s6a" kind="if"
-      condition="entry.is_file"
-      then
-        // Build full path
-        step id="s6b" kind="call"
-          fn="path.join"
-          arg name="base" from="input_dir"
-          arg name="segment" from="entry.name"
-          as="file_path"
-        end
+    // Build full path
+    step id="s6a" kind="call"
+      fn="path.join"
+      arg name="base" from="input_dir"
+      arg name="segment" from="filename"
+      as="file_path"
+    end
 
-        // Process the file
-        step id="s6c" kind="call"
-          fn="doc_ingest.process_file"
-          arg name="file_path" from="file_path"
-          arg name="output_dir" from="output_dir"
-          as="output_path"
-        end
+    // Process the file
+    step id="s6b" kind="call"
+      fn="doc_ingest.process_file"
+      arg name="file_path" from="file_path"
+      arg name="output_dir" from="output_dir"
+      as="output_path"
+    end
 
-        // Print the created file path
-        step id="s6d" kind="call"
-          fn="text.concat"
-          arg name="a" lit="Created: "
-          arg name="b" from="output_path"
-          as="created_msg"
-        end
+    // Print the created file path
+    step id="s6c" kind="call"
+      fn="text.concat"
+      arg name="a" lit="Created: "
+      arg name="b" from="output_path"
+      as="created_msg"
+    end
 
-        step id="s6e" kind="call"
-          fn="console.println"
-          arg name="message" from="created_msg"
-          as="_"
-        end
-      end
+    step id="s6d" kind="call"
+      fn="console.println"
+      arg name="message" from="created_msg"
       as="_"
     end
+
     as="_"
   end
 
@@ -257,7 +252,7 @@ body
 
   // Replace path separators with dots
   step id="s3" kind="call"
-    fn="text.replace"
+    fn="text.replace_all"
     arg name="s" from="no_ext"
     arg name="from" lit="/"
     arg name="to" lit="."
@@ -266,7 +261,7 @@ body
 
   // Handle Windows backslash separators
   step id="s4" kind="call"
-    fn="text.replace"
+    fn="text.replace_all"
     arg name="s" from="dotted"
     arg name="from" lit="\\"
     arg name="to" lit="."
@@ -282,7 +277,7 @@ body
 
   // Replace hyphens with underscores for valid identifiers
   step id="s6" kind="call"
-    fn="text.replace"
+    fn="text.replace_all"
     arg name="s" from="lowered"
     arg name="from" lit="-"
     arg name="to" lit="_"

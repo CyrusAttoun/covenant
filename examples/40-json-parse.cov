@@ -1,0 +1,169 @@
+// JSON Parsing Example
+// Demonstrates parsing JSON and extracting data
+
+snippet id="examples.json_parse" kind="fn"
+
+signature
+  fn name="parse_user_data"
+    param name="json_str" type="String"
+    returns union
+      type="String"
+      type="JsonError"
+    end
+  end
+end
+
+body
+  (* Parse JSON string *)
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" from="json_str"
+    as="result"
+  end
+
+  (* Handle parse result *)
+  step id="s2" kind="match"
+    on="result"
+    case variant type="JsonError"
+      step id="s2a" kind="return"
+        from="result"
+        as="_"
+      end
+    end
+    case variant type="Json"
+      (* Extract name field *)
+      step id="s2b" kind="call"
+        fn="json.get_field"
+        arg name="obj" from="result"
+        arg name="key" lit="name"
+        as="name_field"
+      end
+
+      (* Convert to string *)
+      step id="s2c" kind="call"
+        fn="json.as_string"
+        arg name="value" from="name_field"
+        as="name_opt"
+      end
+
+      (* Handle optional name *)
+      step id="s2d" kind="match"
+        on="name_opt"
+        case variant type="Some" bindings=("name")
+          step id="s2d1" kind="return"
+            from="name"
+            as="_"
+          end
+        end
+        case variant type="None"
+          step id="s2d2" kind="return"
+            variant type="JsonError::InvalidType"
+              field name="expected" lit="string"
+              field name="actual" lit="missing or wrong type"
+            end
+            as="_"
+          end
+        end
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="examples.json_parse_nested" kind="fn"
+
+signature
+  fn name="parse_nested_data"
+    param name="json_str" type="String"
+    returns type="String" optional
+  end
+end
+
+body
+  (* Parse JSON string *)
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" from="json_str"
+    as="result"
+  end
+
+  (* Navigate: result.user.profile.displayName *)
+  step id="s2" kind="call"
+    fn="json.get_field"
+    arg name="obj" from="result"
+    arg name="key" lit="user"
+    as="user_obj"
+  end
+
+  step id="s3" kind="call"
+    fn="json.get_field"
+    arg name="obj" from="user_obj"
+    arg name="key" lit="profile"
+    as="profile_obj"
+  end
+
+  step id="s4" kind="call"
+    fn="json.get_field"
+    arg name="obj" from="profile_obj"
+    arg name="key" lit="displayName"
+    as="name_field"
+  end
+
+  step id="s5" kind="call"
+    fn="json.as_string"
+    arg name="value" from="name_field"
+    as="name"
+  end
+
+  step id="s6" kind="return"
+    from="name"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="examples.json_parse_array" kind="fn"
+
+signature
+  fn name="parse_array_data"
+    param name="json_str" type="String"
+    returns type="String" optional
+  end
+end
+
+body
+  (* Parse JSON array *)
+  step id="s1" kind="call"
+    fn="json.parse"
+    arg name="input" from="json_str"
+    as="result"
+  end
+
+  (* Get first element *)
+  step id="s2" kind="call"
+    fn="json.get_index"
+    arg name="arr" from="result"
+    arg name="index" lit=0
+    as="first_elem"
+  end
+
+  (* Extract as string *)
+  step id="s3" kind="call"
+    fn="json.as_string"
+    arg name="value" from="first_elem"
+    as="str_val"
+  end
+
+  step id="s4" kind="return"
+    from="str_val"
+    as="_"
+  end
+end
+
+end

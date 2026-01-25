@@ -1,0 +1,514 @@
+// std.json - JSON Parsing and Serialization
+//
+// Pure JSON manipulation functions.
+// No effects required — these operate on string values only.
+//
+// Platform backends:
+// - Deno: JSON.parse/JSON.stringify (default target)
+// - Browser: JSON.parse/JSON.stringify
+// - Node.js: JSON.parse/JSON.stringify
+// - WASI: serde_json via WASM imports
+
+// ============================================================
+// Type Definitions
+// ============================================================
+
+snippet id="json.Json" kind="enum"
+
+signature
+  enum name="Json"
+    variant name="Null"
+    end
+    variant name="Bool"
+      field name="value" type="Bool"
+    end
+    variant name="Number"
+      field name="value" type="Float"
+    end
+    variant name="String"
+      field name="value" type="String"
+    end
+    variant name="Array"
+      field name="items" type="Json[]"
+    end
+    variant name="Object"
+      field name="fields" type="Map<String, Json>"
+    end
+  end
+end
+
+end
+
+snippet id="json.JsonError" kind="enum"
+
+signature
+  enum name="JsonError"
+    variant name="ParseError"
+      field name="message" type="String"
+      field name="line" type="Int"
+      field name="column" type="Int"
+    end
+    variant name="InvalidType"
+      field name="expected" type="String"
+      field name="actual" type="String"
+    end
+  end
+end
+
+end
+
+// ============================================================
+// Parsing
+// ============================================================
+
+snippet id="json.parse" kind="extern-abstract"
+
+signature
+  fn name="parse"
+    param name="input" type="String"
+    returns union
+      type="Json"
+      type="JsonError"
+    end
+  end
+end
+
+metadata
+  description="Parse JSON string into Json type. Returns JsonError on invalid syntax."
+  cost_hint=moderate
+end
+
+end
+
+// ============================================================
+// Serialization
+// ============================================================
+
+snippet id="json.stringify" kind="extern-abstract"
+
+signature
+  fn name="stringify"
+    param name="value" type="Json"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Serialize Json value to compact JSON string"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="json.format" kind="extern-abstract"
+
+signature
+  fn name="format"
+    param name="value" type="Json"
+    param name="indent" type="String" optional=true
+    returns type="String"
+  end
+end
+
+metadata
+  description="Serialize Json value to pretty-printed JSON string. Default indent is 2 spaces."
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Validation
+// ============================================================
+
+snippet id="json.is_valid" kind="extern-abstract"
+
+signature
+  fn name="is_valid"
+    param name="input" type="String"
+    returns type="Bool"
+  end
+end
+
+metadata
+  description="Check if string is valid JSON without parsing. Returns true if valid."
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Type Guards
+// ============================================================
+
+snippet id="json.is_object" kind="fn"
+
+signature
+  fn name="is_object"
+    param name="value" type="Json"
+    returns type="Bool"
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Object"
+      step id="s1a" kind="return"
+        lit=true
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=false
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.is_array" kind="fn"
+
+signature
+  fn name="is_array"
+    param name="value" type="Json"
+    returns type="Bool"
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Array"
+      step id="s1a" kind="return"
+        lit=true
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=false
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.is_string" kind="fn"
+
+signature
+  fn name="is_string"
+    param name="value" type="Json"
+    returns type="Bool"
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::String"
+      step id="s1a" kind="return"
+        lit=true
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=false
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.is_number" kind="fn"
+
+signature
+  fn name="is_number"
+    param name="value" type="Json"
+    returns type="Bool"
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Number"
+      step id="s1a" kind="return"
+        lit=true
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=false
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.is_bool" kind="fn"
+
+signature
+  fn name="is_bool"
+    param name="value" type="Json"
+    returns type="Bool"
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Bool"
+      step id="s1a" kind="return"
+        lit=true
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=false
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.is_null" kind="fn"
+
+signature
+  fn name="is_null"
+    param name="value" type="Json"
+    returns type="Bool"
+  end
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Null"
+      step id="s1a" kind="return"
+        lit=true
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=false
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+// ============================================================
+// Extraction Helpers
+// ============================================================
+
+snippet id="json.as_string" kind="fn"
+
+signature
+  fn name="as_string"
+    param name="value" type="Json"
+    returns type="String" optional
+  end
+end
+
+metadata
+  description="Extract string value from Json::String variant. Returns none for other types."
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::String" bindings=("s")
+      step id="s1a" kind="return"
+        from="s"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.as_number" kind="fn"
+
+signature
+  fn name="as_number"
+    param name="value" type="Json"
+    returns type="Float" optional
+  end
+end
+
+metadata
+  description="Extract numeric value from Json::Number variant. Returns none for other types."
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Number" bindings=("n")
+      step id="s1a" kind="return"
+        from="n"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.as_bool" kind="fn"
+
+signature
+  fn name="as_bool"
+    param name="value" type="Json"
+    returns type="Bool" optional
+  end
+end
+
+metadata
+  description="Extract boolean value from Json::Bool variant. Returns none for other types."
+end
+
+body
+  step id="s1" kind="match"
+    on="value"
+    case variant type="Json::Bool" bindings=("b")
+      step id="s1a" kind="return"
+        from="b"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1b" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+// ============================================================
+// Field and Index Access
+// ============================================================
+
+snippet id="json.get_field" kind="fn"
+
+signature
+  fn name="get_field"
+    param name="obj" type="Json"
+    param name="key" type="String"
+    returns type="Json" optional
+  end
+end
+
+metadata
+  description="Extract field from JSON object. Returns none if not an object or key missing."
+end
+
+body
+  step id="s1" kind="match"
+    on="obj"
+    case variant type="Json::Object" bindings=("fields")
+      step id="s1a" kind="call"
+        fn="map.get"
+        arg name="map" from="fields"
+        arg name="key" from="key"
+        as="result"
+      end
+      step id="s1b" kind="return"
+        from="result"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1c" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end
+
+snippet id="json.get_index" kind="fn"
+
+signature
+  fn name="get_index"
+    param name="arr" type="Json"
+    param name="index" type="Int"
+    returns type="Json" optional
+  end
+end
+
+metadata
+  description="Extract element from JSON array. Returns none if not an array or index out of bounds."
+end
+
+body
+  step id="s1" kind="match"
+    on="arr"
+    case variant type="Json::Array" bindings=("items")
+      step id="s1a" kind="call"
+        fn="list.get"
+        arg name="list" from="items"
+        arg name="index" from="index"
+        as="result"
+      end
+      step id="s1b" kind="return"
+        from="result"
+        as="_"
+      end
+    end
+    case wildcard
+      step id="s1c" kind="return"
+        lit=none
+        as="_"
+      end
+    end
+    as="_"
+  end
+end
+
+end

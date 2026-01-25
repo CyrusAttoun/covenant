@@ -136,6 +136,8 @@ const imports: WebAssembly.Imports = {
     // Multi-arg string ops
     replace: (sp: number, sl: number, fp: number, fl: number, tp: number, tl: number): bigint =>
       writeStr(readStr(sp, sl).replace(readStr(fp, fl), readStr(tp, tl))),
+    replace_all: (sp: number, sl: number, fp: number, fl: number, tp: number, tl: number): bigint =>
+      writeStr(readStr(sp, sl).replaceAll(readStr(fp, fl), readStr(tp, tl))),
     split: (ptr: number, len: number, dp: number, dl: number): bigint =>
       writeStrArray(readStr(ptr, len).split(readStr(dp, dl))),
     join: (ap: number, al: number, sp: number, sl: number): bigint =>
@@ -314,7 +316,10 @@ const imports: WebAssembly.Imports = {
         const path = readStr(ptr, len);
         const entries: string[] = [];
         for (const entry of Deno.readDirSync(path)) {
-          entries.push(entry.name);
+          // Only include files for now (until struct support is added)
+          if (entry.isFile) {
+            entries.push(entry.name);
+          }
         }
         return writeStrArray(entries);
       } catch { return writeStrArray([]); }

@@ -89,14 +89,14 @@ end
 
 end
 
-snippet id="fs.readDir" kind="extern-abstract"
+snippet id="fs.read_dir" kind="extern-abstract"
 
 effects
   effect filesystem
 end
 
 signature
-  fn name="readDir"
+  fn name="read_dir"
     param name="path" type="String"
     returns union
       type="List<DirEntry>"

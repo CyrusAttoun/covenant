@@ -1,0 +1,49 @@
+(* WASI implementation of std.json using embedded serde_json *)
+
+snippet id="json.parse.wasi" kind="extern-impl"
+
+implements="json.parse"
+platform="wasi"
+
+metadata
+  contract="@wasi/json.parse"
+  description="Uses serde_json parser via WASM import"
+end
+
+end
+
+snippet id="json.stringify.wasi" kind="extern-impl"
+
+implements="json.stringify"
+platform="wasi"
+
+metadata
+  contract="@wasi/json.stringify"
+  description="Uses serde_json serializer via WASM import"
+end
+
+end
+
+snippet id="json.format.wasi" kind="extern-impl"
+
+implements="json.format"
+platform="wasi"
+
+metadata
+  contract="@wasi/json.format"
+  description="Uses serde_json pretty-printer via WASM import"
+end
+
+end
+
+snippet id="json.is_valid.wasi" kind="extern-impl"
+
+implements="json.is_valid"
+platform="wasi"
+
+metadata
+  contract="@wasi/json.is_valid"
+  description="Uses serde_json validator via WASM import"
+end
+
+end

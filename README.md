@@ -51,10 +51,12 @@ Clone the repository and build the compiler:
 ```sh
 git clone https://github.com/Cyronius/covenant.git
 cd covenant
-cargo build --release
+cargo build --release -p covenant-cli
 ```
 
 The compiled binary will be at `target/release/covenant`.
+
+**Note:** You must build the `covenant-cli` package specifically to create the CLI binary.
 
 ### Install Locally
 
@@ -93,26 +95,26 @@ Compile and run a Covenant program in one step:
 
 ```sh
 # Using the binary directly
-./target/release/covenant run examples/hello.cov
+./target/release/covenant run examples/01-hello-world.cov
 
 # Or if installed
-covenant run examples/hello.cov
+covenant run examples/01-hello-world.cov
 ```
 
 Other useful commands:
 
 ```sh
 # Parse and check for errors
-covenant check examples/hello.cov
+covenant check examples/01-hello-world.cov
 
 # Show symbol information
-covenant info examples/hello.cov
+covenant info examples/01-hello-world.cov
 
 # Query the codebase
-covenant query examples/hello.cov "select all from functions"
+covenant query --query "select all from functions" examples/01-hello-world.cov 
 
 # Generate explanations
-covenant explain examples/hello.cov
+covenant explain examples/01-hello-world.cov
 
 # Interactive REPL
 covenant repl

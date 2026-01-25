@@ -251,6 +251,24 @@ end
 
 end
 
+snippet id="text.replace_all" kind="extern-abstract"
+
+signature
+  fn name="replace_all"
+    param name="s" type="String"
+    param name="from" type="String"
+    param name="to" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Replace all occurrences of 'from' with 'to'"
+  cost_hint=cheap
+end
+
+end
+
 snippet id="text.split" kind="extern-abstract"
 
 signature

@@ -1,7 +1,7 @@
 // Filesystem Module Test Suite
 // Comprehensive unit tests for file and directory operations.
 // Tests cover: fs.read_file, fs.write_file, fs.write_bytes, fs.remove, fs.stat,
-//   fs.readDir, fs.exists, fs.mkdir, fs.copy, fs.rename, fs.chmod,
+//   fs.read_dir, fs.exists, fs.mkdir, fs.copy, fs.rename, fs.chmod,
 //   fs.open, fs.read_bytes, fs.close
 // Test naming: T-FS-XXX | Requirements: R-FS-XXX
 // Note: All tests use ./covenant-test-temp/ directory and clean up after themselves.
@@ -584,7 +584,7 @@ tests
     end
 
     step id="s4" kind="call"
-      fn="fs.readDir"
+      fn="fs.read_dir"
       arg name="path" lit="./covenant-test-temp/readdir-test"
       as="result"
     end
@@ -652,7 +652,7 @@ tests
     end
 
     step id="s2" kind="call"
-      fn="fs.readDir"
+      fn="fs.read_dir"
       arg name="path" lit="./covenant-test-temp/empty-dir-test"
       as="result"
     end

@@ -62,13 +62,13 @@ end
 
 end
 
-snippet id="fs.readDir.deno" kind="extern-impl"
+snippet id="fs.read_dir.deno" kind="extern-impl"
 
-implements="fs.readDir"
+implements="fs.read_dir"
 platform="deno"
 
 metadata
-  contract="@deno/fs.readDir"
+  contract="@deno/fs.read_dir"
   description="Uses Deno.readDir() to list directory entries"
   permissions="read"
 end

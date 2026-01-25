@@ -1,0 +1,182 @@
+// JSON Building Example
+// Demonstrates constructing and serializing JSON objects
+
+snippet id="examples.json_build_simple" kind="fn"
+
+signature
+  fn name="build_simple_response"
+    param name="status" type="String"
+    param name="code" type="Int"
+    returns type="String"
+  end
+end
+
+body
+  (* Convert Int to Float for Json::Number *)
+  step id="s1" kind="op"
+    op=to_float
+    input from="code"
+    as="code_float"
+  end
+
+  (* Build JSON object *)
+  step id="s2" kind="construct"
+    variant type="Json::Object"
+      field name="fields" map
+        entry key="status" value variant type="Json::String"
+          field name="value" from="status"
+        end
+        entry key="code" value variant type="Json::Number"
+          field name="value" from="code_float"
+        end
+      end
+    end
+    as="json_obj"
+  end
+
+  (* Serialize to string *)
+  step id="s3" kind="call"
+    fn="json.stringify"
+    arg name="value" from="json_obj"
+    as="json_str"
+  end
+
+  step id="s4" kind="return"
+    from="json_str"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="examples.json_build_nested" kind="fn"
+
+signature
+  fn name="build_user_profile"
+    param name="user_name" type="String"
+    param name="user_email" type="String"
+    param name="age" type="Int"
+    returns type="String"
+  end
+end
+
+body
+  (* Convert age to Float *)
+  step id="s1" kind="op"
+    op=to_float
+    input from="age"
+    as="age_float"
+  end
+
+  (* Build profile object *)
+  step id="s2" kind="construct"
+    variant type="Json::Object"
+      field name="fields" map
+        entry key="email" value variant type="Json::String"
+          field name="value" from="user_email"
+        end
+        entry key="age" value variant type="Json::Number"
+          field name="value" from="age_float"
+        end
+      end
+    end
+    as="profile_obj"
+  end
+
+  (* Build user object with nested profile *)
+  step id="s3" kind="construct"
+    variant type="Json::Object"
+      field name="fields" map
+        entry key="name" value variant type="Json::String"
+          field name="value" from="user_name"
+        end
+        entry key="profile" value from="profile_obj"
+      end
+    end
+    as="user_obj"
+  end
+
+  (* Serialize to pretty JSON *)
+  step id="s4" kind="call"
+    fn="json.format"
+    arg name="value" from="user_obj"
+    arg name="indent" lit="  "
+    as="json_str"
+  end
+
+  step id="s5" kind="return"
+    from="json_str"
+    as="_"
+  end
+end
+
+end
+
+
+snippet id="examples.json_build_array" kind="fn"
+
+signature
+  fn name="build_tag_array"
+    param name="tag1" type="String"
+    param name="tag2" type="String"
+    param name="tag3" type="String"
+    returns type="String"
+  end
+end
+
+body
+  (* Build array items *)
+  step id="s1" kind="construct"
+    variant type="Json::String"
+      field name="value" from="tag1"
+    end
+    as="item1"
+  end
+
+  step id="s2" kind="construct"
+    variant type="Json::String"
+      field name="value" from="tag2"
+    end
+    as="item2"
+  end
+
+  step id="s3" kind="construct"
+    variant type="Json::String"
+      field name="value" from="tag3"
+    end
+    as="item3"
+  end
+
+  (* Build array *)
+  step id="s4" kind="construct"
+    list
+      item from="item1"
+      item from="item2"
+      item from="item3"
+    end
+    as="items_list"
+  end
+
+  (* Build JSON array *)
+  step id="s5" kind="construct"
+    variant type="Json::Array"
+      field name="items" from="items_list"
+    end
+    as="json_arr"
+  end
+
+  (* Serialize *)
+  step id="s6" kind="call"
+    fn="json.stringify"
+    arg name="value" from="json_arr"
+    as="json_str"
+  end
+
+  step id="s7" kind="return"
+    from="json_str"
+    as="_"
+  end
+end
+
+end
