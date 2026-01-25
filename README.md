@@ -32,6 +32,114 @@ irm https://raw.githubusercontent.com/Cyronius/covenant/master/install/install.p
 
 ---
 
+## Building from Source
+
+### Prerequisites
+
+**Required:**
+- [Rust](https://rustup.rs/) 1.70+ (stable toolchain)
+- `cargo` (comes with Rust)
+
+**Optional (for running Covenant programs):**
+- [Deno](https://deno.land/) 1.40+ (default runtime, recommended)
+- [Node.js](https://nodejs.org/) 18+ (fallback runtime)
+
+### Build Instructions
+
+Clone the repository and build the compiler:
+
+```sh
+git clone https://github.com/Cyronius/covenant.git
+cd covenant
+cargo build --release
+```
+
+The compiled binary will be at `target/release/covenant`.
+
+### Install Locally
+
+To install the `covenant` command to your system:
+
+```sh
+cargo install --path crates/covenant-cli
+```
+
+This installs the binary to `~/.cargo/bin/covenant` (ensure `~/.cargo/bin` is in your PATH).
+
+### Running Tests
+
+Run the full test suite:
+
+```sh
+cargo test --workspace
+```
+
+Run specific test suites:
+
+```sh
+# Parser tests
+cargo test -p covenant-parser
+
+# Type checker tests
+cargo test -p covenant-checker
+
+# Integration tests
+cargo test --test '*'
+```
+
+### Development Workflow
+
+Compile and run a Covenant program in one step:
+
+```sh
+# Using the binary directly
+./target/release/covenant run examples/hello.cov
+
+# Or if installed
+covenant run examples/hello.cov
+```
+
+Other useful commands:
+
+```sh
+# Parse and check for errors
+covenant check examples/hello.cov
+
+# Show symbol information
+covenant info examples/hello.cov
+
+# Query the codebase
+covenant query examples/hello.cov "select all from functions"
+
+# Generate explanations
+covenant explain examples/hello.cov
+
+# Interactive REPL
+covenant repl
+```
+
+### Runtime Dependencies
+
+Covenant compiles to WebAssembly (WASM). To execute programs, you need a runtime:
+
+- **Deno** (recommended): Provides WASI support and I/O APIs
+- **Node.js**: Fallback option with similar capabilities
+- **Browser**: For web-based execution (requires custom loader)
+
+The `covenant run` command automatically uses Deno if available, falling back to Node.js.
+
+Install Deno (recommended):
+
+```sh
+# macOS/Linux
+curl -fsSL https://deno.land/install.sh | sh
+
+# Windows (PowerShell)
+irm https://deno.land/install.ps1 | iex
+```
+
+---
+
 ## Why AI-First?
 
 Traditional languages optimize for human authorship. Covenant optimizes for machine generation:
