@@ -1,0 +1,178 @@
+// Example 50: Simple Embedded Query
+//
+// Demonstrates:
+// - Embedding documentation as data snippets
+// - Querying embedded data using target="project"
+// - Basic project queries against kind="data" nodes
+
+// -----------------------------------------------------------------------------
+// Data Snippets (embedded in WASM)
+// -----------------------------------------------------------------------------
+
+snippet id="docs.hello" kind="data"
+
+  note "Hello World Documentation"
+
+  content
+    """
+    Hello World Documentation
+
+    This is a simple example demonstrating embedded documentation
+    that can be queried at runtime using project queries.
+    """
+  end
+
+  relations
+    rel to="main.hello" type=describes
+  end
+
+end
+
+snippet id="docs.readme" kind="data"
+
+  note "README documentation"
+
+  content
+    """
+    README
+
+    This example shows how to:
+    1. Define data snippets with content
+    2. Query them using target="project"
+    3. Load and execute queries in WASM
+    """
+  end
+
+  relations
+    rel to="main.hello" type=related_to
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Code Snippets
+// -----------------------------------------------------------------------------
+
+snippet id="main.hello" kind="fn"
+
+  signature
+    fn name="hello"
+      returns type="String"
+    end
+  end
+
+  body
+    step id="s1" kind="return"
+      lit="Hello, World!"
+      as="_"
+    end
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Query Functions
+// -----------------------------------------------------------------------------
+
+snippet id="query.find_docs" kind="fn"
+
+  note "Find all documentation nodes"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_docs"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      as="docs"
+    end
+
+    step id="s2" kind="return"
+      from="docs"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="query.find_hello_doc" kind="fn"
+
+  note "Find documentation for the hello function"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_hello_doc"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        and
+          equals field="kind" lit="data"
+          equals field="id" lit="docs.hello"
+        end
+      end
+      limit=1
+      as="doc"
+    end
+
+    step id="s2" kind="return"
+      from="doc"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="query.count_docs" kind="fn"
+
+  note "Count total documentation nodes"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="count_docs"
+      returns type="Int"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      as="docs"
+    end
+
+    step id="s2" kind="return"
+      lit=0
+      as="_"
+    end
+  end
+
+end

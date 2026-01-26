@@ -1133,6 +1133,13 @@ impl<'a> SnippetWasmCompiler<'a> {
     /// - Covenant queries are compiled to runtime calls
     /// - SQL dialect queries have their SQL stored in data segment
     fn compile_query_step(&mut self, query: &QueryStep, func: &mut Function) -> Result<(), CodegenError> {
+        // Route based on query target
+        if query.target == "project" {
+            // Project queries use embedded GAI functions, not external database
+            return self.compile_project_query(query, func);
+        }
+
+        // For non-project targets (database queries), use existing SQL compilation
         match &query.content {
             QueryContent::Dialect(dialect) => {
                 // Store SQL in data segment
@@ -1184,6 +1191,37 @@ impl<'a> SnippetWasmCompiler<'a> {
 
         // Convert result pointer to i64 for uniform local storage
         func.instruction(&Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Compile a project query (target="project") using GAI functions
+    fn compile_project_query(&mut self, _query: &QueryStep, func: &mut Function) -> Result<(), CodegenError> {
+        // TODO: Implement full project query compilation using GAI functions
+        // For now, return an empty result (null pointer = 0)
+        //
+        // Full implementation will:
+        // 1. Call cov_node_count() to get total nodes
+        // 2. Iterate through nodes using cov_get_node_id(idx)
+        // 3. Filter nodes based on where clause using:
+        //    - cov_content_contains() for content searches
+        //    - cov_find_by_id() for ID lookups
+        //    - cov_get_outgoing_rel() / cov_get_incoming_rel() for relation queries
+        // 4. Collect matching nodes into a result array
+        // 5. Apply ordering and limit
+        // 6. Return pointer to result array
+
+        if let Some(ref _gai) = self.gai_indices {
+            // GAI functions are available - future implementation will use them
+            // For now, return empty result
+            func.instruction(&Instruction::I32Const(0));
+            func.instruction(&Instruction::I64ExtendI32U);
+        } else {
+            // No GAI functions available (no data snippets compiled)
+            // Return empty result
+            func.instruction(&Instruction::I32Const(0));
+            func.instruction(&Instruction::I64ExtendI32U);
+        }
 
         Ok(())
     }
