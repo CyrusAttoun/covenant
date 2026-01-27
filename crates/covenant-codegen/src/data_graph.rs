@@ -11,6 +11,7 @@ use covenant_ast::{RelationKind, Section, Snippet, SnippetKind};
 #[derive(Debug, Clone)]
 pub struct DataNode {
     pub id: String,
+    pub kind: String, // "data", "fn", "struct", etc. - for query filtering
     pub content: String,
     pub notes: Vec<String>,
     pub metadata: Vec<(String, String)>,
@@ -123,8 +124,11 @@ impl DataGraph {
 
             let idx = nodes.len();
             id_to_index.insert(id.clone(), idx);
+            // Add kind to metadata for query filtering
+            metadata.push(("kind".to_string(), "data".to_string()));
             nodes.push(DataNode {
                 id,
+                kind: "data".to_string(),
                 content,
                 notes,
                 metadata,
@@ -142,11 +146,25 @@ impl DataGraph {
                 // Add as a node with empty content (for relation resolution only)
                 let idx = nodes.len();
                 id_to_index.insert(id.clone(), idx);
+                let kind_str = match snippet.kind {
+                    SnippetKind::Function => "fn",
+                    SnippetKind::Struct => "struct",
+                    SnippetKind::Database => "database",
+                    SnippetKind::Extern => "extern",
+                    SnippetKind::Enum => "enum",
+                    SnippetKind::Module => "module",
+                    SnippetKind::ExternAbstract => "extern_abstract",
+                    SnippetKind::ExternImpl => "extern_impl",
+                    SnippetKind::Test => "test",
+                    SnippetKind::Data => "data", // Won't happen due to continue above
+                };
+                let mut metadata = vec![("kind".to_string(), kind_str.to_string())];
                 nodes.push(DataNode {
                     id,
+                    kind: kind_str.to_string(),
                     content: String::new(),
                     notes: Vec::new(),
-                    metadata: Vec::new(),
+                    metadata,
                 });
             }
         }

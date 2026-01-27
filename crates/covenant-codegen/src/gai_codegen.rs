@@ -35,6 +35,9 @@ pub struct GraphLayout {
     /// Offset to the node ID table: [(pool_offset: u32, len: u32), ...] per node
     pub node_id_table_offset: u32,
 
+    /// Offset to the kind table: [(pool_offset: u32, len: u32), ...] per node
+    pub kind_table_offset: u32,
+
     /// Offset to the content table: [(pool_offset: u32, len: u32), ...] per node
     pub content_table_offset: u32,
 
@@ -81,6 +84,7 @@ pub fn generate_graph_segment(graph: &DataGraph, base_offset: u32) -> (Vec<u8>, 
         string_pool_offset: 0,
         string_pool_size: 0,
         node_id_table_offset: 0,
+        kind_table_offset: 0,
         content_table_offset: 0,
         notes_index_offset: 0,
         notes_entries_offset: 0,
@@ -112,6 +116,13 @@ pub fn generate_graph_segment(graph: &DataGraph, base_offset: u32) -> (Vec<u8>, 
     for node in &graph.nodes {
         let entry = add_to_pool(&mut string_pool, &node.id);
         node_id_entries.push(entry);
+    }
+
+    // Node kinds
+    let mut kind_entries: Vec<(u32, u32)> = Vec::new();
+    for node in &graph.nodes {
+        let entry = add_to_pool(&mut string_pool, &node.kind);
+        kind_entries.push(entry);
     }
 
     // Node content
@@ -169,6 +180,13 @@ pub fn generate_graph_segment(graph: &DataGraph, base_offset: u32) -> (Vec<u8>, 
     // Node ID table: [(pool_offset: u32, len: u32), ...] per node
     layout.node_id_table_offset = data.len() as u32;
     for (offset, len) in &node_id_entries {
+        data.extend_from_slice(&offset.to_le_bytes());
+        data.extend_from_slice(&len.to_le_bytes());
+    }
+
+    // Kind table: [(pool_offset: u32, len: u32), ...] per node
+    layout.kind_table_offset = data.len() as u32;
+    for (offset, len) in &kind_entries {
         data.extend_from_slice(&offset.to_le_bytes());
         data.extend_from_slice(&len.to_le_bytes());
     }
@@ -275,6 +293,8 @@ pub struct GaiFunctionIndices {
     pub node_count: u32,
     /// _gai_get_node_id(idx: i32) -> i64  (fat ptr)
     pub get_node_id: u32,
+    /// _gai_get_node_kind(idx: i32) -> i64  (fat ptr)
+    pub get_node_kind: u32,
     /// _gai_get_node_content(idx: i32) -> i64  (fat ptr)
     pub get_node_content: u32,
     /// _gai_get_outgoing_count(node_idx: i32) -> i32
@@ -296,7 +316,7 @@ pub struct GaiFunctionIndices {
 }
 
 /// Number of GAI functions
-pub const GAI_FUNCTION_COUNT: u32 = 10;
+pub const GAI_FUNCTION_COUNT: u32 = 11;
 
 /// Generate GAI function type signatures.
 /// Returns Vec of (params, results) for the type section.
@@ -306,21 +326,23 @@ pub fn gai_function_types() -> Vec<(Vec<ValType>, Vec<ValType>)> {
         (vec![], vec![ValType::I32]),
         // 1: _gai_get_node_id(idx: i32) -> i64
         (vec![ValType::I32], vec![ValType::I64]),
-        // 2: _gai_get_node_content(idx: i32) -> i64
+        // 2: _gai_get_node_kind(idx: i32) -> i64
         (vec![ValType::I32], vec![ValType::I64]),
-        // 3: _gai_get_outgoing_count(node_idx: i32) -> i32
+        // 3: _gai_get_node_content(idx: i32) -> i64
+        (vec![ValType::I32], vec![ValType::I64]),
+        // 4: _gai_get_outgoing_count(node_idx: i32) -> i32
         (vec![ValType::I32], vec![ValType::I32]),
-        // 4: _gai_get_outgoing_rel(node_idx: i32, rel_offset: i32) -> i64
+        // 5: _gai_get_outgoing_rel(node_idx: i32, rel_offset: i32) -> i64
         (vec![ValType::I32, ValType::I32], vec![ValType::I64]),
-        // 5: _gai_get_incoming_count(node_idx: i32) -> i32
+        // 6: _gai_get_incoming_count(node_idx: i32) -> i32
         (vec![ValType::I32], vec![ValType::I32]),
-        // 6: _gai_get_incoming_rel(node_idx: i32, rel_offset: i32) -> i64
+        // 7: _gai_get_incoming_rel(node_idx: i32, rel_offset: i32) -> i64
         (vec![ValType::I32, ValType::I32], vec![ValType::I64]),
-        // 7: _gai_find_by_id(id_ptr: i32, id_len: i32) -> i32
+        // 8: _gai_find_by_id(id_ptr: i32, id_len: i32) -> i32
         (vec![ValType::I32, ValType::I32], vec![ValType::I32]),
-        // 8: _gai_content_contains(node_idx: i32, term_ptr: i32, term_len: i32) -> i32
+        // 9: _gai_content_contains(node_idx: i32, term_ptr: i32, term_len: i32) -> i32
         (vec![ValType::I32, ValType::I32, ValType::I32], vec![ValType::I32]),
-        // 9: _gai_get_rel_type_name(type_idx: i32) -> i64
+        // 10: _gai_get_rel_type_name(type_idx: i32) -> i64
         (vec![ValType::I32], vec![ValType::I64]),
     ]
 }
@@ -338,6 +360,11 @@ pub fn gen_gai_node_count(layout: &GraphLayout) -> Function {
 /// Returns fat pointer: (base + string_pool_offset + pool_offset) << 32 | len
 pub fn gen_gai_get_node_id(layout: &GraphLayout) -> Function {
     gen_table_lookup_fat_ptr(layout, layout.node_id_table_offset)
+}
+
+/// Generate the body of _gai_get_node_kind(idx: i32) -> i64
+pub fn gen_gai_get_node_kind(layout: &GraphLayout) -> Function {
+    gen_table_lookup_fat_ptr(layout, layout.kind_table_offset)
 }
 
 /// Generate the body of _gai_get_node_content(idx: i32) -> i64
@@ -800,6 +827,7 @@ pub fn generate_gai_functions(layout: &GraphLayout) -> Vec<Function> {
     vec![
         gen_gai_node_count(layout),
         gen_gai_get_node_id(layout),
+        gen_gai_get_node_kind(layout),
         gen_gai_get_node_content(layout),
         gen_gai_get_outgoing_count(layout),
         gen_gai_get_outgoing_rel(layout),

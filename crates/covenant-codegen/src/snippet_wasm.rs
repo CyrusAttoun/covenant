@@ -14,7 +14,7 @@ use wasm_encoder::{
     Module, TypeSection, ValType,
 };
 use covenant_ast::{
-    BindSource, BindStep, CallStep, ComputeStep, EffectsSection, ForStep, FunctionSignature,
+    BindSource, BindStep, CallStep, ComputeStep, Condition, EffectsSection, ForStep, FunctionSignature,
     InputSource, IfStep, Literal, MatchPattern, MatchStep, Operation, QueryContent,
     QueryStep, ReturnStep, ReturnType, ReturnValue, Section, SignatureKind, Snippet, SnippetKind,
     Step, StepKind, StructConstruction, Type, TypeKind,
@@ -399,14 +399,15 @@ impl<'a> SnippetWasmCompiler<'a> {
             self.gai_indices = Some(GaiFunctionIndices {
                 node_count: gai_base_idx,
                 get_node_id: gai_base_idx + 1,
-                get_node_content: gai_base_idx + 2,
-                get_outgoing_count: gai_base_idx + 3,
-                get_outgoing_rel: gai_base_idx + 4,
-                get_incoming_count: gai_base_idx + 5,
-                get_incoming_rel: gai_base_idx + 6,
-                find_by_id: gai_base_idx + 7,
-                content_contains: gai_base_idx + 8,
-                get_rel_type_name: gai_base_idx + 9,
+                get_node_kind: gai_base_idx + 2,
+                get_node_content: gai_base_idx + 3,
+                get_outgoing_count: gai_base_idx + 4,
+                get_outgoing_rel: gai_base_idx + 5,
+                get_incoming_count: gai_base_idx + 6,
+                get_incoming_rel: gai_base_idx + 7,
+                find_by_id: gai_base_idx + 8,
+                content_contains: gai_base_idx + 9,
+                get_rel_type_name: gai_base_idx + 10,
             });
         }
 
@@ -467,6 +468,7 @@ impl<'a> SnippetWasmCompiler<'a> {
         if let Some(ref gai) = self.gai_indices {
             exports.export("cov_node_count", ExportKind::Func, gai.node_count);
             exports.export("cov_get_node_id", ExportKind::Func, gai.get_node_id);
+            exports.export("cov_get_node_kind", ExportKind::Func, gai.get_node_kind);
             exports.export("cov_get_node_content", ExportKind::Func, gai.get_node_content);
             exports.export("cov_get_outgoing_count", ExportKind::Func, gai.get_outgoing_count);
             exports.export("cov_get_outgoing_rel", ExportKind::Func, gai.get_outgoing_rel);
@@ -774,6 +776,13 @@ impl<'a> SnippetWasmCompiler<'a> {
                     if matches!(&ret.value, ReturnValue::Struct(_)) {
                         count += 1;
                     }
+                }
+                StepKind::Query(_) => {
+                    // Query steps need many temp locals for execution:
+                    // - 4 for basic loop control (total_nodes, current_idx, result_ptr, result_count)
+                    // - Up to ~16 for string comparison in WHERE clauses
+                    // Allocate 20 to be safe
+                    count += 20;
                 }
                 _ => {}
             }
@@ -1196,34 +1205,479 @@ impl<'a> SnippetWasmCompiler<'a> {
     }
 
     /// Compile a project query (target="project") using GAI functions
-    fn compile_project_query(&mut self, _query: &QueryStep, func: &mut Function) -> Result<(), CodegenError> {
-        // TODO: Implement full project query compilation using GAI functions
-        // For now, return an empty result (null pointer = 0)
-        //
-        // Full implementation will:
-        // 1. Call cov_node_count() to get total nodes
-        // 2. Iterate through nodes using cov_get_node_id(idx)
-        // 3. Filter nodes based on where clause using:
-        //    - cov_content_contains() for content searches
-        //    - cov_find_by_id() for ID lookups
-        //    - cov_get_outgoing_rel() / cov_get_incoming_rel() for relation queries
-        // 4. Collect matching nodes into a result array
-        // 5. Apply ordering and limit
-        // 6. Return pointer to result array
+    fn compile_project_query(&mut self, query: &QueryStep, func: &mut Function) -> Result<(), CodegenError> {
+        let gai = match self.gai_indices.as_ref() {
+            Some(g) => g.clone(),
+            None => {
+                // No GAI functions available (no data snippets compiled)
+                // Return empty result (0 = null fat pointer)
+                func.instruction(&Instruction::I32Const(0));
+                func.instruction(&Instruction::I64ExtendI32U);
+                return Ok(());
+            }
+        };
 
-        if let Some(ref _gai) = self.gai_indices {
-            // GAI functions are available - future implementation will use them
-            // For now, return empty result
-            func.instruction(&Instruction::I32Const(0));
+        // Extract Covenant query or return empty for dialect queries
+        let cov_query = match &query.content {
+            QueryContent::Covenant(cq) => cq,
+            QueryContent::Dialect(_) => {
+                // Dialect queries are for external databases, not project queries
+                func.instruction(&Instruction::I32Const(0));
+                func.instruction(&Instruction::I64ExtendI32U);
+                return Ok(());
+            }
+        };
+
+        // Allocate locals for query execution
+        let total_nodes = self.allocate_local("__total_nodes");
+        let current_idx = self.allocate_local("__current_idx");
+        let result_ptr = self.allocate_local("__result_ptr");
+        let result_count = self.allocate_local("__result_count");
+
+        // Step 1: Call _gai_node_count() to get total nodes (returns i32, extend to i64)
+        func.instruction(&Instruction::Call(gai.node_count));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(total_nodes));
+
+        // Step 2: Allocate result array (max size = total_nodes * 4 bytes per i32 index)
+        // result_ptr = heap_ptr; heap_ptr += total_nodes * 4
+        // Global(0) is i32, extend to i64 for our local
+        func.instruction(&Instruction::GlobalGet(0)); // heap_ptr (i32)
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalTee(result_ptr));
+        // For heap calculation, work in i32
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(total_nodes));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::GlobalSet(0)); // Update heap_ptr
+
+        // Initialize result_count = 0 (extend to i64)
+        func.instruction(&Instruction::I32Const(0));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(result_count));
+
+        // Initialize current_idx = 0 (extend to i64)
+        func.instruction(&Instruction::I32Const(0));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(current_idx));
+
+        // Step 3: Loop through all nodes and filter based on where clause
+        func.instruction(&Instruction::Block(BlockType::Empty)); // outer block for break
+        func.instruction(&Instruction::Loop(BlockType::Empty));
+
+        // Check if current_idx >= total_nodes, if so, break (wrap to i32 for comparison)
+        func.instruction(&Instruction::LocalGet(current_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(total_nodes));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32GeU);
+        func.instruction(&Instruction::BrIf(1)); // break outer block
+
+        // Evaluate where clause (if present)
+        if let Some(ref condition) = cov_query.where_clause {
+            self.compile_query_condition(condition, current_idx, &gai, func)?;
+
+            // If condition is true (1), add node to results
+            func.instruction(&Instruction::If(BlockType::Empty));
+
+            // Store current_idx in result array at offset (result_count * 4)
+            // Wrap all to i32 for memory operations
+            func.instruction(&Instruction::LocalGet(result_ptr));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::LocalGet(result_count));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Const(4));
+            func.instruction(&Instruction::I32Mul);
+            func.instruction(&Instruction::I32Add);
+            func.instruction(&Instruction::LocalGet(current_idx));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Store(MemArg {
+                offset: 0,
+                align: 2, // 2^2 = 4 byte alignment
+                memory_index: 0,
+            }));
+
+            // Increment result_count (wrap to i32, add, extend back to i64)
+            func.instruction(&Instruction::LocalGet(result_count));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Const(1));
+            func.instruction(&Instruction::I32Add);
             func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(result_count));
+
+            func.instruction(&Instruction::End); // end if
         } else {
-            // No GAI functions available (no data snippets compiled)
-            // Return empty result
-            func.instruction(&Instruction::I32Const(0));
+            // No where clause - include all nodes (wrap to i32 for memory operations)
+            func.instruction(&Instruction::LocalGet(result_ptr));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::LocalGet(result_count));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Const(4));
+            func.instruction(&Instruction::I32Mul);
+            func.instruction(&Instruction::I32Add);
+            func.instruction(&Instruction::LocalGet(current_idx));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Store(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            }));
+
+            func.instruction(&Instruction::LocalGet(result_count));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Const(1));
+            func.instruction(&Instruction::I32Add);
             func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(result_count));
         }
 
+        // Increment current_idx (wrap to i32, add, extend back to i64)
+        func.instruction(&Instruction::LocalGet(current_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(1));
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(current_idx));
+        func.instruction(&Instruction::Br(0)); // continue loop
+
+        func.instruction(&Instruction::End); // end loop
+        func.instruction(&Instruction::End); // end block
+
+        // Step 4: Apply ORDER BY (if present)
+        if let Some(ref _order) = cov_query.order {
+            // TODO: Implement sorting
+            // For now, skip ordering - results are in insertion order
+        }
+
+        // Step 5: Apply LIMIT (if present)
+        if let Some(limit) = cov_query.limit {
+            // If result_count > limit, set result_count = limit (wrap to i32 for comparison)
+            func.instruction(&Instruction::LocalGet(result_count));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Const(limit as i32));
+            func.instruction(&Instruction::I32GtU);
+            func.instruction(&Instruction::If(BlockType::Empty));
+            func.instruction(&Instruction::I32Const(limit as i32));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(result_count));
+            func.instruction(&Instruction::End);
+        }
+
+        // Step 6: Return fat pointer (result_ptr << 32 | result_count)
+        // Both are already i64, just pack them
+        func.instruction(&Instruction::LocalGet(result_ptr));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64Shl);
+        func.instruction(&Instruction::LocalGet(result_count));
+        func.instruction(&Instruction::I64Or);
+
         Ok(())
+    }
+
+    /// Compile a query condition to WASM instructions
+    /// Leaves 1 (true) or 0 (false) on the stack
+    fn compile_query_condition(
+        &mut self,
+        condition: &Condition,
+        node_idx_local: u32,
+        gai: &GaiFunctionIndices,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        use covenant_ast::ConditionKind;
+
+        match &condition.kind {
+            ConditionKind::Equals { field, value } => {
+                self.compile_field_equals(field.as_str(), value, node_idx_local, gai, func)?;
+            }
+            ConditionKind::Contains { field, value } => {
+                self.compile_field_contains(field.as_str(), value, node_idx_local, gai, func)?;
+            }
+            ConditionKind::NotEquals { field, value } => {
+                // Compile equals and negate
+                self.compile_field_equals(field.as_str(), value, node_idx_local, gai, func)?;
+                // Negate: 1 -> 0, 0 -> 1
+                func.instruction(&Instruction::I32Eqz);
+            }
+            ConditionKind::And(left, right) => {
+                // Evaluate left
+                self.compile_query_condition(left, node_idx_local, gai, func)?;
+                // If left is 0, short-circuit and return 0
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+                // Left is true, evaluate right
+                self.compile_query_condition(right, node_idx_local, gai, func)?;
+                func.instruction(&Instruction::Else);
+                // Left is false, return 0
+                func.instruction(&Instruction::I32Const(0));
+                func.instruction(&Instruction::End);
+            }
+            ConditionKind::Or(left, right) => {
+                // Evaluate left
+                self.compile_query_condition(left, node_idx_local, gai, func)?;
+                // If left is 1, short-circuit and return 1
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+                // Left is true, return 1
+                func.instruction(&Instruction::I32Const(1));
+                func.instruction(&Instruction::Else);
+                // Left is false, evaluate right
+                self.compile_query_condition(right, node_idx_local, gai, func)?;
+                func.instruction(&Instruction::End);
+            }
+            ConditionKind::RelTo { .. } | ConditionKind::RelFrom { .. } => {
+                // TODO: Implement relation queries using _gai_get_outgoing_rel / _gai_get_incoming_rel
+                // For now, return false
+                func.instruction(&Instruction::I32Const(0));
+            }
+        }
+        Ok(())
+    }
+
+    /// Compile field equals comparison
+    fn compile_field_equals(
+        &mut self,
+        field: &str,
+        value: &InputSource,
+        node_idx_local: u32,
+        gai: &GaiFunctionIndices,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        match field {
+            "id" => {
+                // Get node ID and compare with value
+                self.compile_string_field_comparison(
+                    value,
+                    node_idx_local,
+                    gai.get_node_id,
+                    func,
+                )?;
+            }
+            "kind" => {
+                // Get node kind and compare with value
+                self.compile_string_field_comparison(
+                    value,
+                    node_idx_local,
+                    gai.get_node_kind,
+                    func,
+                )?;
+            }
+            _ => {
+                // Unknown field - return false
+                func.instruction(&Instruction::I32Const(0));
+            }
+        }
+        Ok(())
+    }
+
+    /// Compile field contains check
+    fn compile_field_contains(
+        &mut self,
+        field: &str,
+        value: &InputSource,
+        node_idx_local: u32,
+        gai: &GaiFunctionIndices,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        match field {
+            "content" => {
+                // Use _gai_content_contains(node_idx, term_ptr, term_len)
+                // Get the search term as a string literal
+                if let InputSource::Lit(Literal::String(search_term)) = value {
+                    // Add string to data segment
+                    let term_offset = self.data_segment.add_string(search_term);
+                    let term_len = search_term.len() as i32;
+
+                    // Call _gai_content_contains(node_idx, term_ptr, term_len)
+                    // Note: GAI functions expect i32, our locals are i64
+                    func.instruction(&Instruction::LocalGet(node_idx_local));
+                    func.instruction(&Instruction::I32WrapI64);
+                    func.instruction(&Instruction::I32Const(term_offset as i32));
+                    func.instruction(&Instruction::I32Const(term_len));
+                    func.instruction(&Instruction::Call(gai.content_contains));
+                    // Result is i32 (0 or 1), which is what we need for conditions
+                } else {
+                    // Non-string search term - return false
+                    func.instruction(&Instruction::I32Const(0));
+                }
+            }
+            "id" => {
+                // Check if ID contains substring (convert to string comparison)
+                if let InputSource::Lit(Literal::String(search_term)) = value {
+                    // For ID substring search, we need to:
+                    // 1. Get node ID
+                    // 2. Implement substring search manually
+                    // For now, simplified implementation - TODO: proper substring search
+                    let _term_offset = self.data_segment.add_string(search_term);
+                    // Return false for now
+                    func.instruction(&Instruction::I32Const(0));
+                } else {
+                    func.instruction(&Instruction::I32Const(0));
+                }
+            }
+            _ => {
+                // Unknown field - return false
+                func.instruction(&Instruction::I32Const(0));
+            }
+        }
+        Ok(())
+    }
+
+    /// Compare a string field value with an input source
+    /// Calls a GAI function that returns a fat pointer string and compares
+    fn compile_string_field_comparison(
+        &mut self,
+        value: &InputSource,
+        node_idx_local: u32,
+        gai_func_idx: u32,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        // Only support string literal comparisons for now
+        if let InputSource::Lit(Literal::String(expected)) = value {
+            // Allocate locals for string comparison
+            let field_str = self.allocate_local("__field_str");
+            let field_ptr = self.allocate_local("__field_ptr");
+            let field_len = self.allocate_local("__field_len");
+            let expected_ptr = self.allocate_local("__expected_ptr");
+            let expected_len = self.allocate_local("__expected_len");
+            let cmp_idx = self.allocate_local("__cmp_idx");
+            let byte1 = self.allocate_local("__byte1");
+            let byte2 = self.allocate_local("__byte2");
+
+            // Add expected string to data segment
+            let exp_offset = self.data_segment.add_string(expected);
+            let exp_len = expected.len() as i32;
+
+            // Store expected string ptr and len (extend i32 to i64 for locals)
+            func.instruction(&Instruction::I32Const(exp_offset as i32));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(expected_ptr));
+            func.instruction(&Instruction::I32Const(exp_len));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(expected_len));
+
+            // Call GAI function to get field value (returns i64 fat pointer)
+            // Note: GAI functions expect i32 params, but our locals are i64, so wrap
+            func.instruction(&Instruction::LocalGet(node_idx_local));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::Call(gai_func_idx));
+            func.instruction(&Instruction::LocalSet(field_str));
+
+            // Unpack fat pointer: ptr = high 32 bits, len = low 32 bits
+            // Convert to i32, then extend back to i64 for storage in locals
+            func.instruction(&Instruction::LocalGet(field_str));
+            func.instruction(&Instruction::I64Const(32));
+            func.instruction(&Instruction::I64ShrU);
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(field_ptr));
+
+            func.instruction(&Instruction::LocalGet(field_str));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(field_len));
+
+            // Compare lengths first (wrap i64 locals to i32 for comparison)
+            func.instruction(&Instruction::LocalGet(field_len));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::LocalGet(expected_len));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Ne);
+            func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+            // Lengths differ - return false
+            func.instruction(&Instruction::I32Const(0));
+            func.instruction(&Instruction::Else);
+
+            // Lengths match - compare bytes
+            // Initialize cmp_idx = 0 (extend to i64)
+            func.instruction(&Instruction::I32Const(0));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(cmp_idx));
+
+            // Create a result variable initialized to 1 (true, extend to i64)
+            let match_result = self.allocate_local("__match_result");
+            func.instruction(&Instruction::I32Const(1));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(match_result));
+
+            // Loop through bytes
+            func.instruction(&Instruction::Block(BlockType::Empty)); // outer
+            func.instruction(&Instruction::Loop(BlockType::Empty));
+
+            // Check if cmp_idx >= field_len (wrap to i32 for comparison)
+            func.instruction(&Instruction::LocalGet(cmp_idx));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::LocalGet(field_len));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32GeU);
+            func.instruction(&Instruction::BrIf(1)); // break outer
+
+            // Load byte from field (wrap to i32 for address calculation)
+            func.instruction(&Instruction::LocalGet(field_ptr));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::LocalGet(cmp_idx));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Add);
+            func.instruction(&Instruction::I32Load8U(MemArg {
+                offset: 0,
+                align: 0,
+                memory_index: 0,
+            }));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(byte1));
+
+            // Load byte from expected (wrap to i32 for address calculation)
+            func.instruction(&Instruction::LocalGet(expected_ptr));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::LocalGet(cmp_idx));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Add);
+            func.instruction(&Instruction::I32Load8U(MemArg {
+                offset: 0,
+                align: 0,
+                memory_index: 0,
+            }));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(byte2));
+
+            // Compare bytes (wrap to i32 for comparison)
+            func.instruction(&Instruction::LocalGet(byte1));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::LocalGet(byte2));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Ne);
+            func.instruction(&Instruction::If(BlockType::Empty));
+            // Mismatch - set result to 0 and break (extend to i64)
+            func.instruction(&Instruction::I32Const(0));
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(match_result));
+            func.instruction(&Instruction::Br(2)); // break outer
+            func.instruction(&Instruction::End);
+
+            // Increment cmp_idx (wrap to i32, add, extend back to i64)
+            func.instruction(&Instruction::LocalGet(cmp_idx));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Const(1));
+            func.instruction(&Instruction::I32Add);
+            func.instruction(&Instruction::I64ExtendI32U);
+            func.instruction(&Instruction::LocalSet(cmp_idx));
+            func.instruction(&Instruction::Br(0)); // continue loop
+
+            func.instruction(&Instruction::End); // end loop
+            func.instruction(&Instruction::End); // end block
+
+            // Return match_result (wrap to i32 for condition result)
+            func.instruction(&Instruction::LocalGet(match_result));
+            func.instruction(&Instruction::I32WrapI64);
+
+            func.instruction(&Instruction::End); // end length check if-else
+
+            Ok(())
+        } else {
+            // Non-string comparison - return false
+            func.instruction(&Instruction::I32Const(0));
+            Ok(())
+        }
     }
 
     /// Compile a compute step
