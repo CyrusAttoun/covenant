@@ -14,9 +14,11 @@ pub struct RuntimeSymbol {
     pub kind: String,
 
     /// Source file path
+    #[serde(default)]
     pub file: String,
 
     /// Line number in source
+    #[serde(default)]
     pub line: u32,
 
     /// Forward references: functions this symbol calls
@@ -42,6 +44,10 @@ pub struct RuntimeSymbol {
 
     /// Linked tests
     pub tests: Vec<String>,
+
+    /// For test snippets: requirements this test covers
+    #[serde(default)]
+    pub covers: Vec<String>,
 }
 
 impl RuntimeSymbol {
@@ -60,6 +66,7 @@ impl RuntimeSymbol {
             effect_closure: Vec::new(),
             requirements: Vec::new(),
             tests: Vec::new(),
+            covers: Vec::new(),
         }
     }
 
@@ -111,8 +118,9 @@ impl From<&covenant_symbols::SymbolInfo> for RuntimeSymbol {
             referenced_by: Vec::new(),
             effects: info.declared_effects.clone(),
             effect_closure: Vec::new(), // Computed by effect checker
-            requirements: Vec::new(),
-            tests: Vec::new(),
+            requirements: info.requirements.clone(),
+            tests: info.tests.clone(),
+            covers: info.covers.clone(),
         }
     }
 }

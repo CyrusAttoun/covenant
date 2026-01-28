@@ -91,6 +91,16 @@ pub struct SymbolInfo {
     /// Inverse relations (computed from relations_to)
     pub relations_from: Vec<RelationRef>,
 
+    // === Requirements & Tests (extracted in Pass 1) ===
+    /// Requirements declared in this snippet (from requires section)
+    pub requirements: Vec<String>,
+
+    /// Tests declared in this snippet (test IDs from tests section)
+    pub tests: Vec<String>,
+
+    /// For test snippets: which requirements this test covers
+    pub covers: Vec<String>,
+
     // === Resolution State ===
     /// Unresolved call references (for deferred error handling)
     pub unresolved_calls: HashSet<String>,
@@ -121,6 +131,9 @@ impl SymbolInfo {
             called_by: HashSet::new(),
             referenced_by: HashSet::new(),
             relations_from: Vec::new(),
+            requirements: Vec::new(),
+            tests: Vec::new(),
+            covers: Vec::new(),
             unresolved_calls: HashSet::new(),
             unresolved_references: HashSet::new(),
             implements: None,

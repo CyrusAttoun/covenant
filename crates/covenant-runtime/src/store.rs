@@ -3,6 +3,7 @@
 //! This module implements the `symbols` interface from WIT.
 //! It provides CRUD operations for symbols with version tracking.
 
+use crate::error::RuntimeError;
 use crate::types::{RuntimeSymbol, SymbolFilter};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -153,6 +154,26 @@ impl SymbolStore {
                 }
             }
         }
+    }
+
+    /// Load symbols from embedded WASM metadata (JSON format)
+    ///
+    /// This method parses JSON-serialized symbol metadata extracted from
+    /// a WASM module's data section via the `_cov_get_symbol_metadata` export.
+    ///
+    /// The JSON format is an array of symbol objects matching the RuntimeSymbol
+    /// structure (or the EmbeddableSymbol format from covenant-codegen).
+    pub fn load_from_json(&mut self, json_bytes: &[u8]) -> Result<(), RuntimeError> {
+        let symbols: Vec<RuntimeSymbol> = serde_json::from_slice(json_bytes)
+            .map_err(|e| RuntimeError::DeserializationFailed(e.to_string()))?;
+
+        self.symbols.clear();
+        for symbol in symbols {
+            self.symbols.insert(symbol.id.clone(), symbol);
+        }
+
+        self.bump_version();
+        Ok(())
     }
 }
 

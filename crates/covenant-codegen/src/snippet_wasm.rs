@@ -146,6 +146,11 @@ impl DataSegmentBuilder {
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
+
+    /// Append raw bytes to the end of the data segment
+    pub fn append_raw(&mut self, raw: &[u8]) {
+        self.data.extend_from_slice(raw);
+    }
 }
 
 // ===== Import Tracker =====
@@ -222,6 +227,10 @@ pub struct SnippetWasmCompiler<'a> {
     graph_layout: Option<GraphLayout>,
     /// Set of function names/IDs that have no WASM return value (Unit return type)
     void_functions: std::collections::HashSet<String>,
+    /// Symbol metadata JSON offset in data segment
+    symbol_metadata_offset: Option<u32>,
+    /// Symbol metadata JSON length in bytes
+    symbol_metadata_len: Option<u32>,
 }
 
 /// Describes a registered extern-abstract import
@@ -273,6 +282,8 @@ impl<'a> SnippetWasmCompiler<'a> {
             gai_indices: None,
             graph_layout: None,
             void_functions: std::collections::HashSet::new(),
+            symbol_metadata_offset: None,
+            symbol_metadata_len: None,
         }
     }
 
@@ -512,6 +523,289 @@ impl<'a> SnippetWasmCompiler<'a> {
         }
 
         Ok(module.finish())
+    }
+
+    /// Compile snippets to WASM with embedded symbol metadata
+    ///
+    /// This is similar to `compile_snippets` but also embeds symbol metadata as JSON
+    /// in the data section and exports a `_cov_get_symbol_metadata()` function.
+    pub fn compile_snippets_with_symbols(
+        &mut self,
+        snippets: &[Snippet],
+        embeddable_symbols: &[crate::EmbeddableSymbol],
+    ) -> Result<Vec<u8>, CodegenError> {
+        let mut module = Module::new();
+
+        // Register struct layouts from struct snippets
+        for snippet in snippets {
+            if snippet.kind == SnippetKind::Struct {
+                self.register_struct_layout(snippet);
+            }
+        }
+
+        // Collect all function snippets (both pure and effectful)
+        let functions: Vec<&Snippet> = snippets
+            .iter()
+            .filter(|s| s.kind == SnippetKind::Function)
+            .collect();
+
+        // Check for data snippets - if present, build the graph and embed it
+        let has_data_snippets = snippets.iter().any(|s| s.kind == SnippetKind::Data);
+
+        if has_data_snippets {
+            let graph = DataGraph::from_snippets(snippets);
+            if graph.node_count() > 0 {
+                // Generate graph data segment at offset 0
+                let (seg_data, layout) = gai_codegen::generate_graph_segment(&graph, 0);
+                self.graph_layout = Some(layout);
+                // Pre-fill the data segment with graph data so that subsequent
+                // add_string() calls get correct offsets (after graph data)
+                self.data_segment.prepend_raw(&seg_data);
+            }
+        }
+
+        // Serialize and embed symbol metadata JSON
+        let symbol_json = serde_json::to_vec(embeddable_symbols)
+            .map_err(|e| CodegenError::SerializationFailed(e.to_string()))?;
+
+        // Record offset before appending
+        let symbol_offset = self.data_segment.len() as u32;
+        let symbol_len = symbol_json.len() as u32;
+        self.data_segment.append_raw(&symbol_json);
+        self.symbol_metadata_offset = Some(symbol_offset);
+        self.symbol_metadata_len = Some(symbol_len);
+
+        // First pass: collect all effects and register imports
+        let all_effects = collect_all_effects(&functions);
+        self.register_effect_imports(&all_effects);
+
+        // Register all extern-abstract imports (stdlib + user-defined)
+        self.register_extern_abstracts();
+        self.register_user_extern_abstracts(snippets);
+
+        // Pre-scan for string literals to determine if we need memory
+        let has_strings = functions.iter().any(|s| snippet_has_string_literals(s));
+
+        // Determine how many GAI functions we need
+        let gai_count = if self.graph_layout.is_some() { GAI_FUNCTION_COUNT } else { 0 };
+
+        // Build type section (imports first, then user functions, then GAI functions, then symbol metadata)
+        let mut types = TypeSection::new();
+
+        // Add import types
+        for (_, _, params, results) in &self.imports.imports {
+            types.function(params.clone(), results.clone());
+        }
+
+        // Add function types for user functions
+        for snippet in &functions {
+            if let Some(sig) = find_function_signature(snippet) {
+                let params: Vec<ValType> = sig
+                    .params
+                    .iter()
+                    .filter_map(|p| self.type_to_valtype(&p.ty))
+                    .collect();
+
+                let results: Vec<ValType> = sig
+                    .returns
+                    .as_ref()
+                    .and_then(|r| self.return_type_to_valtype(r))
+                    .map(|t| vec![t])
+                    .unwrap_or_default();
+
+                types.function(params, results);
+            }
+        }
+
+        // Add GAI function types
+        if gai_count > 0 {
+            for (params, results) in gai_codegen::gai_function_types() {
+                types.function(params, results);
+            }
+        }
+
+        // Add symbol metadata function type: () -> i64
+        let symbol_metadata_type_idx = types.len();
+        types.function(vec![], vec![ValType::I64]);
+
+        module.section(&types);
+
+        // Import section (if there are any imports)
+        if !self.imports.imports.is_empty() {
+            let mut import_section = ImportSection::new();
+            for (i, (mod_name, func_name, _, _)) in self.imports.imports.iter().enumerate() {
+                import_section.import(mod_name, func_name, wasm_encoder::EntityType::Function(i as u32));
+            }
+            module.section(&import_section);
+        }
+
+        // Build function index map (accounting for imports)
+        let import_count = self.imports.len();
+        for (i, snippet) in functions.iter().enumerate() {
+            if let Some(sig) = find_function_signature(snippet) {
+                self.function_indices
+                    .insert(sig.name.clone(), import_count + i as u32);
+                // Also map by snippet ID for fully-qualified calls
+                self.function_indices
+                    .insert(snippet.id.clone(), import_count + i as u32);
+                // Track Unit-returning functions (no WASM return value)
+                let has_wasm_return = sig.returns.as_ref()
+                    .and_then(|r| self.return_type_to_valtype(r))
+                    .is_some();
+                if !has_wasm_return {
+                    self.void_functions.insert(sig.name.clone());
+                    self.void_functions.insert(snippet.id.clone());
+                }
+            }
+        }
+
+        // Compute GAI function indices (after user functions)
+        let gai_base_idx = import_count + functions.len() as u32;
+        if gai_count > 0 {
+            self.gai_indices = Some(GaiFunctionIndices {
+                node_count: gai_base_idx,
+                get_node_id: gai_base_idx + 1,
+                get_node_kind: gai_base_idx + 2,
+                get_node_content: gai_base_idx + 3,
+                get_outgoing_count: gai_base_idx + 4,
+                get_outgoing_rel: gai_base_idx + 5,
+                get_incoming_count: gai_base_idx + 6,
+                get_incoming_rel: gai_base_idx + 7,
+                find_by_id: gai_base_idx + 8,
+                content_contains: gai_base_idx + 9,
+                get_rel_type_name: gai_base_idx + 10,
+            });
+        }
+
+        // Symbol metadata function index (after GAI functions)
+        let symbol_metadata_func_idx = gai_base_idx + gai_count;
+
+        // Function section (user functions + GAI functions + symbol metadata function)
+        let mut func_section = FunctionSection::new();
+        // User function type indices start after imports
+        for i in 0..functions.len() {
+            func_section.function(import_count + i as u32);
+        }
+        // GAI function type indices start after user function types
+        let gai_type_base = import_count + functions.len() as u32;
+        for i in 0..gai_count {
+            func_section.function(gai_type_base + i);
+        }
+        // Symbol metadata function type
+        func_section.function(symbol_metadata_type_idx);
+        module.section(&func_section);
+
+        // Memory section - always export memory when compiling functions or data
+        let needs_memory = !functions.is_empty()
+            || self.graph_layout.is_some()
+            || !self.data_segment.is_empty()
+            || !all_effects.is_empty()
+            || has_strings;
+        if needs_memory {
+            let mut memory = MemorySection::new();
+            // 1 page = 64KB, start with 16 pages (1MB)
+            memory.memory(MemoryType {
+                minimum: 16,
+                maximum: Some(256), // 16MB max
+                memory64: false,
+                shared: false,
+            });
+            module.section(&memory);
+        }
+
+        // Global section for heap pointer
+        if needs_memory {
+            let mut globals = GlobalSection::new();
+            // Heap pointer starts after all data (graph + strings + symbol JSON)
+            let heap_start = self.data_segment.len() as i32;
+            globals.global(
+                GlobalType {
+                    val_type: ValType::I32,
+                    mutable: true,
+                },
+                &wasm_encoder::ConstExpr::i32_const(heap_start),
+            );
+            module.section(&globals);
+        }
+
+        // Export section
+        let mut exports = ExportSection::new();
+        for (i, snippet) in functions.iter().enumerate() {
+            if let Some(sig) = find_function_signature(snippet) {
+                exports.export(&sig.name, ExportKind::Func, import_count + i as u32);
+            }
+        }
+        // Export GAI functions with cov_ prefix for external access
+        if let Some(ref gai) = self.gai_indices {
+            exports.export("cov_node_count", ExportKind::Func, gai.node_count);
+            exports.export("cov_get_node_id", ExportKind::Func, gai.get_node_id);
+            exports.export("cov_get_node_kind", ExportKind::Func, gai.get_node_kind);
+            exports.export("cov_get_node_content", ExportKind::Func, gai.get_node_content);
+            exports.export("cov_get_outgoing_count", ExportKind::Func, gai.get_outgoing_count);
+            exports.export("cov_get_outgoing_rel", ExportKind::Func, gai.get_outgoing_rel);
+            exports.export("cov_get_incoming_count", ExportKind::Func, gai.get_incoming_count);
+            exports.export("cov_get_incoming_rel", ExportKind::Func, gai.get_incoming_rel);
+            exports.export("cov_find_by_id", ExportKind::Func, gai.find_by_id);
+            exports.export("cov_content_contains", ExportKind::Func, gai.content_contains);
+            exports.export("cov_get_rel_type_name", ExportKind::Func, gai.get_rel_type_name);
+        }
+        // Export symbol metadata function
+        exports.export("_cov_get_symbol_metadata", ExportKind::Func, symbol_metadata_func_idx);
+        // Export memory if present
+        if needs_memory {
+            exports.export("memory", ExportKind::Memory, 0);
+        }
+        module.section(&exports);
+
+        // Code section (user functions + GAI functions + symbol metadata function)
+        let mut codes = CodeSection::new();
+        for snippet in &functions {
+            let wasm_func = self.compile_function_snippet(snippet)?;
+            codes.function(&wasm_func);
+        }
+        // Add GAI function bodies
+        if let Some(ref layout) = self.graph_layout {
+            let gai_funcs = gai_codegen::generate_gai_functions(layout);
+            for gai_func in gai_funcs {
+                codes.function(&gai_func);
+            }
+        }
+        // Add symbol metadata function body
+        let symbol_metadata_func = self.gen_symbol_metadata_function();
+        codes.function(&symbol_metadata_func);
+        module.section(&codes);
+
+        // Data section (graph data + string constants + symbol JSON, already combined in data_segment)
+        if !self.data_segment.is_empty() {
+            let mut data = DataSection::new();
+            let segment_data = std::mem::take(&mut self.data_segment).finish();
+            data.active(
+                0, // Memory index
+                &wasm_encoder::ConstExpr::i32_const(0),
+                segment_data,
+            );
+            module.section(&data);
+        }
+
+        Ok(module.finish())
+    }
+
+    /// Generate the _cov_get_symbol_metadata function body
+    ///
+    /// Returns a fat pointer (i64) encoding: (offset << 32) | length
+    fn gen_symbol_metadata_function(&self) -> Function {
+        let mut func = Function::new(vec![]);
+
+        let offset = self.symbol_metadata_offset.unwrap_or(0);
+        let len = self.symbol_metadata_len.unwrap_or(0);
+
+        // Pack as fat pointer: (offset << 32) | len
+        let fat_ptr = ((offset as i64) << 32) | (len as i64);
+
+        func.instruction(&Instruction::I64Const(fat_ptr));
+        func.instruction(&Instruction::End);
+
+        func
     }
 
     /// Register imports for the given effects

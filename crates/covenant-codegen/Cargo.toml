@@ -7,8 +7,11 @@ edition.workspace = true
 covenant-ast = { workspace = true }
 covenant-checker = { workspace = true }
 covenant-parser = { workspace = true }
+covenant-symbols = { workspace = true }
 wasm-encoder = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 wasmtime = { workspace = true }

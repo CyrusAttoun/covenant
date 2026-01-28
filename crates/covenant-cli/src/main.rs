@@ -10,7 +10,7 @@ use covenant_parser::parse;
 use covenant_symbols::build_symbol_graph;
 use covenant_checker::{check, check_effects, EffectError};
 use covenant_graph::{GraphBuilder, execute_query, parse_query};
-use covenant_codegen::compile_pure;
+use covenant_codegen::{compile_pure, compile_with_symbols};
 use covenant_llm::{
     ExplainGenerator, ExplanationCache, LlmClient,
     Verbosity, ExplainFormat, format_explanation,
@@ -344,7 +344,18 @@ fn cmd_compile(file: &PathBuf, output: Option<PathBuf>, target: &str, opt_level:
         }
     }
 
-    match compile_pure(&program, &result.symbols) {
+    // Build symbol graph and run effect checking for symbol metadata embedding
+    let symbol_result = build_symbol_graph(&program);
+    let empty_graph = covenant_symbols::SymbolGraph::new();
+    let symbol_graph = match &symbol_result {
+        Ok(result) => &result.graph,
+        Err(_) => &empty_graph,
+    };
+
+    let effect_result = check_effects(symbol_graph);
+
+    // Compile with symbol metadata embedding
+    match compile_with_symbols(&program, &result.symbols, symbol_graph, &effect_result) {
         Ok(wasm) => {
             let out_path = output.unwrap_or_else(|| {
                 let mut p = file.clone();

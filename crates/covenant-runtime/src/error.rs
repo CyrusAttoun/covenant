@@ -28,6 +28,9 @@ pub enum RuntimeError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Deserialization failed: {0}")]
+    DeserializationFailed(String),
 }
 
 impl RuntimeError {
@@ -41,6 +44,7 @@ impl RuntimeError {
             RuntimeError::ParseError(_) => "E-RT-005",
             RuntimeError::ValidationError(_) => "E-RT-006",
             RuntimeError::CompilationError(_) => "E-RT-007",
+            RuntimeError::DeserializationFailed(_) => "E-RT-008",
             RuntimeError::Internal(_) => "E-RT-999",
         }
     }

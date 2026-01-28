@@ -4,7 +4,7 @@
 
 use crate::{RelationRef, SymbolError, SymbolGraph, SymbolInfo, SymbolKind};
 use covenant_ast::{
-    BodySection, EffectsSection, RelationsSection, ReturnType, ReturnValue,
+    BodySection, EffectsSection, RelationsSection, RequiresSection, ReturnType, ReturnValue,
     Section, SignatureKind, SignatureSection, Snippet, SnippetKind, Step, StepKind, TestsSection,
     Type, TypeKind,
 };
@@ -71,8 +71,13 @@ impl SymbolExtractor {
                 Section::Relations(rels) => {
                     symbol.relations_to = self.extract_relations(rels);
                 }
+                Section::Requires(reqs) => {
+                    symbol.requirements = self.extract_requirements(reqs);
+                }
                 Section::Tests(tests) => {
-                    let (test_calls, test_refs) = self.extract_tests_refs(tests);
+                    let (test_ids, covers, test_calls, test_refs) = self.extract_tests_full(tests);
+                    symbol.tests = test_ids;
+                    symbol.covers = covers;
                     symbol.calls.extend(test_calls);
                     symbol.references.extend(test_refs);
                 }
@@ -86,6 +91,33 @@ impl SymbolExtractor {
     /// Extract effect names from effects section
     fn extract_effects(&self, effects: &EffectsSection) -> Vec<String> {
         effects.effects.iter().map(|e| e.name.clone()).collect()
+    }
+
+    /// Extract requirement IDs from requires section
+    fn extract_requirements(&self, reqs: &RequiresSection) -> Vec<String> {
+        reqs.requirements.iter().map(|r| r.id.clone()).collect()
+    }
+
+    /// Extract test IDs, covers, and references from tests section
+    fn extract_tests_full(
+        &self,
+        tests: &TestsSection,
+    ) -> (Vec<String>, Vec<String>, HashSet<String>, HashSet<String>) {
+        let mut test_ids = Vec::new();
+        let mut covers = Vec::new();
+        let mut calls = HashSet::new();
+        let mut refs = HashSet::new();
+
+        for test in &tests.tests {
+            test_ids.push(test.id.clone());
+            covers.extend(test.covers.iter().cloned());
+
+            let (test_calls, test_refs) = self.extract_steps_refs(&test.steps);
+            calls.extend(test_calls);
+            refs.extend(test_refs);
+        }
+
+        (test_ids, covers, calls, refs)
     }
 
     /// Extract type references from signature
@@ -178,20 +210,6 @@ impl SymbolExtractor {
     /// Extract call and type references from body
     fn extract_body_refs(&self, body: &BodySection) -> (HashSet<String>, HashSet<String>) {
         self.extract_steps_refs(&body.steps)
-    }
-
-    /// Extract references from tests section
-    fn extract_tests_refs(&self, tests: &TestsSection) -> (HashSet<String>, HashSet<String>) {
-        let mut calls = HashSet::new();
-        let mut refs = HashSet::new();
-
-        for test in &tests.tests {
-            let (test_calls, test_refs) = self.extract_steps_refs(&test.steps);
-            calls.extend(test_calls);
-            refs.extend(test_refs);
-        }
-
-        (calls, refs)
     }
 
     /// Extract references from a list of steps
