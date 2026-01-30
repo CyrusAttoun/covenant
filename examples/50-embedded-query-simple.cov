@@ -176,3 +176,136 @@ snippet id="query.count_docs" kind="fn"
   end
 
 end
+
+// -----------------------------------------------------------------------------
+// ORDER BY Test Functions
+// -----------------------------------------------------------------------------
+
+snippet id="query.find_docs_sorted_asc" kind="fn"
+
+  note "Find all data nodes sorted by ID ascending"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_docs_sorted_asc"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      order by="id" dir="asc"
+      as="docs"
+    end
+
+    step id="s2" kind="return"
+      from="docs"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="query.find_docs_sorted_desc" kind="fn"
+
+  note "Find all data nodes sorted by ID descending"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_docs_sorted_desc"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      order by="id" dir="desc"
+      as="docs"
+    end
+
+    step id="s2" kind="return"
+      from="docs"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="query.find_all_sorted_by_kind" kind="fn"
+
+  note "Find all nodes sorted by kind"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_all_sorted_by_kind"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      order by="kind" dir="asc"
+      as="all_nodes"
+    end
+
+    step id="s2" kind="return"
+      from="all_nodes"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="query.find_all_unsorted" kind="fn"
+
+  note "Find all nodes without sorting (to verify initial order)"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_all_unsorted"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      as="all_nodes"
+    end
+
+    step id="s2" kind="return"
+      from="all_nodes"
+      as="_"
+    end
+  end
+
+end

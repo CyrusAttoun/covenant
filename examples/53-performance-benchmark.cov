@@ -1,0 +1,1471 @@
+// Example 53: Performance Benchmark
+//
+// Benchmark test for query performance with ~100 nodes
+// Target: Query execution < 1ms for 100 nodes
+//
+// Node count: 50 data nodes + 50 function nodes = 100 total
+
+// -----------------------------------------------------------------------------
+// Data Snippets (50 documentation nodes)
+// -----------------------------------------------------------------------------
+
+snippet id="docs.api.auth" kind="data"
+  note "Authentication API documentation"
+  content
+    """
+    Authentication API
+    Handles user login, logout, and session management.
+    """
+  end
+end
+
+snippet id="docs.api.users" kind="data"
+  note "Users API documentation"
+  content
+    """
+    Users API
+    CRUD operations for user management.
+    """
+  end
+end
+
+snippet id="docs.api.products" kind="data"
+  note "Products API documentation"
+  content
+    """
+    Products API
+    Product catalog management and search.
+    """
+  end
+end
+
+snippet id="docs.api.orders" kind="data"
+  note "Orders API documentation"
+  content
+    """
+    Orders API
+    Order processing and fulfillment.
+    """
+  end
+end
+
+snippet id="docs.api.payments" kind="data"
+  note "Payments API documentation"
+  content
+    """
+    Payments API
+    Payment processing and refunds.
+    """
+  end
+end
+
+snippet id="docs.api.shipping" kind="data"
+  note "Shipping API documentation"
+  content
+    """
+    Shipping API
+    Shipping rate calculation and tracking.
+    """
+  end
+end
+
+snippet id="docs.api.inventory" kind="data"
+  note "Inventory API documentation"
+  content
+    """
+    Inventory API
+    Stock management and availability.
+    """
+  end
+end
+
+snippet id="docs.api.reviews" kind="data"
+  note "Reviews API documentation"
+  content
+    """
+    Reviews API
+    Customer reviews and ratings.
+    """
+  end
+end
+
+snippet id="docs.api.search" kind="data"
+  note "Search API documentation"
+  content
+    """
+    Search API
+    Full-text search across products and content.
+    """
+  end
+end
+
+snippet id="docs.api.analytics" kind="data"
+  note "Analytics API documentation"
+  content
+    """
+    Analytics API
+    Usage metrics and reporting.
+    """
+  end
+end
+
+snippet id="docs.guide.quickstart" kind="data"
+  note "Quick start guide"
+  content
+    """
+    Quick Start Guide
+    Get up and running in 5 minutes.
+    """
+  end
+end
+
+snippet id="docs.guide.installation" kind="data"
+  note "Installation guide"
+  content
+    """
+    Installation Guide
+    Step-by-step installation instructions.
+    """
+  end
+end
+
+snippet id="docs.guide.configuration" kind="data"
+  note "Configuration guide"
+  content
+    """
+    Configuration Guide
+    Environment variables and settings.
+    """
+  end
+end
+
+snippet id="docs.guide.deployment" kind="data"
+  note "Deployment guide"
+  content
+    """
+    Deployment Guide
+    Production deployment best practices.
+    """
+  end
+end
+
+snippet id="docs.guide.testing" kind="data"
+  note "Testing guide"
+  content
+    """
+    Testing Guide
+    Unit and integration testing strategies.
+    """
+  end
+end
+
+snippet id="docs.guide.security" kind="data"
+  note "Security guide"
+  content
+    """
+    Security Guide
+    Authentication and authorization patterns.
+    """
+  end
+end
+
+snippet id="docs.guide.performance" kind="data"
+  note "Performance guide"
+  content
+    """
+    Performance Guide
+    Optimization and caching strategies.
+    """
+  end
+end
+
+snippet id="docs.guide.monitoring" kind="data"
+  note "Monitoring guide"
+  content
+    """
+    Monitoring Guide
+    Logging, metrics, and alerting.
+    """
+  end
+end
+
+snippet id="docs.guide.troubleshooting" kind="data"
+  note "Troubleshooting guide"
+  content
+    """
+    Troubleshooting Guide
+    Common issues and solutions.
+    """
+  end
+end
+
+snippet id="docs.guide.migration" kind="data"
+  note "Migration guide"
+  content
+    """
+    Migration Guide
+    Upgrading between versions.
+    """
+  end
+end
+
+snippet id="docs.ref.types" kind="data"
+  note "Type reference"
+  content
+    """
+    Type Reference
+    Core types and interfaces.
+    """
+  end
+end
+
+snippet id="docs.ref.errors" kind="data"
+  note "Error reference"
+  content
+    """
+    Error Reference
+    Error codes and handling.
+    """
+  end
+end
+
+snippet id="docs.ref.events" kind="data"
+  note "Events reference"
+  content
+    """
+    Events Reference
+    System events and webhooks.
+    """
+  end
+end
+
+snippet id="docs.ref.limits" kind="data"
+  note "Rate limits reference"
+  content
+    """
+    Rate Limits Reference
+    API rate limits and quotas.
+    """
+  end
+end
+
+snippet id="docs.ref.changelog" kind="data"
+  note "Changelog"
+  content
+    """
+    Changelog
+    Version history and release notes.
+    """
+  end
+end
+
+snippet id="docs.arch.overview" kind="data"
+  note "Architecture overview"
+  content
+    """
+    Architecture Overview
+    System design and components.
+    """
+  end
+end
+
+snippet id="docs.arch.database" kind="data"
+  note "Database architecture"
+  content
+    """
+    Database Architecture
+    Schema design and migrations.
+    """
+  end
+end
+
+snippet id="docs.arch.caching" kind="data"
+  note "Caching architecture"
+  content
+    """
+    Caching Architecture
+    Redis and in-memory caching.
+    """
+  end
+end
+
+snippet id="docs.arch.messaging" kind="data"
+  note "Messaging architecture"
+  content
+    """
+    Messaging Architecture
+    Event queues and pub/sub.
+    """
+  end
+end
+
+snippet id="docs.arch.scaling" kind="data"
+  note "Scaling architecture"
+  content
+    """
+    Scaling Architecture
+    Horizontal and vertical scaling.
+    """
+  end
+end
+
+snippet id="docs.example.auth" kind="data"
+  note "Auth example"
+  content
+    """
+    Authentication Example
+    Login flow implementation.
+    """
+  end
+end
+
+snippet id="docs.example.crud" kind="data"
+  note "CRUD example"
+  content
+    """
+    CRUD Example
+    Basic create, read, update, delete.
+    """
+  end
+end
+
+snippet id="docs.example.search" kind="data"
+  note "Search example"
+  content
+    """
+    Search Example
+    Full-text search implementation.
+    """
+  end
+end
+
+snippet id="docs.example.upload" kind="data"
+  note "Upload example"
+  content
+    """
+    File Upload Example
+    Handling file uploads.
+    """
+  end
+end
+
+snippet id="docs.example.export" kind="data"
+  note "Export example"
+  content
+    """
+    Data Export Example
+    CSV and JSON exports.
+    """
+  end
+end
+
+snippet id="docs.example.webhook" kind="data"
+  note "Webhook example"
+  content
+    """
+    Webhook Example
+    Receiving and processing webhooks.
+    """
+  end
+end
+
+snippet id="docs.example.batch" kind="data"
+  note "Batch example"
+  content
+    """
+    Batch Processing Example
+    Bulk operations handling.
+    """
+  end
+end
+
+snippet id="docs.example.realtime" kind="data"
+  note "Realtime example"
+  content
+    """
+    Realtime Example
+    WebSocket connections.
+    """
+  end
+end
+
+snippet id="docs.example.pagination" kind="data"
+  note "Pagination example"
+  content
+    """
+    Pagination Example
+    Cursor and offset pagination.
+    """
+  end
+end
+
+snippet id="docs.example.validation" kind="data"
+  note "Validation example"
+  content
+    """
+    Validation Example
+    Input validation patterns.
+    """
+  end
+end
+
+snippet id="docs.faq.general" kind="data"
+  note "General FAQ"
+  content
+    """
+    General FAQ
+    Frequently asked questions.
+    """
+  end
+end
+
+snippet id="docs.faq.pricing" kind="data"
+  note "Pricing FAQ"
+  content
+    """
+    Pricing FAQ
+    Billing and subscription questions.
+    """
+  end
+end
+
+snippet id="docs.faq.support" kind="data"
+  note "Support FAQ"
+  content
+    """
+    Support FAQ
+    Getting help and support.
+    """
+  end
+end
+
+snippet id="docs.faq.integrations" kind="data"
+  note "Integrations FAQ"
+  content
+    """
+    Integrations FAQ
+    Third-party integrations.
+    """
+  end
+end
+
+snippet id="docs.faq.compliance" kind="data"
+  note "Compliance FAQ"
+  content
+    """
+    Compliance FAQ
+    GDPR, SOC2, and compliance.
+    """
+  end
+end
+
+snippet id="docs.internal.roadmap" kind="data"
+  note "Internal roadmap"
+  content
+    """
+    Product Roadmap
+    Upcoming features and timeline.
+    """
+  end
+end
+
+snippet id="docs.internal.decisions" kind="data"
+  note "Architecture decisions"
+  content
+    """
+    Architecture Decision Records
+    Key technical decisions.
+    """
+  end
+end
+
+snippet id="docs.internal.runbook" kind="data"
+  note "Operations runbook"
+  content
+    """
+    Operations Runbook
+    Incident response procedures.
+    """
+  end
+end
+
+snippet id="docs.internal.onboarding" kind="data"
+  note "Onboarding docs"
+  content
+    """
+    Developer Onboarding
+    New team member guide.
+    """
+  end
+end
+
+// -----------------------------------------------------------------------------
+// Function Snippets (50 function nodes)
+// -----------------------------------------------------------------------------
+
+snippet id="api.auth.login" kind="fn"
+  signature
+    fn name="login"
+      param name="username" type="String"
+      param name="password" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="token"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.auth.logout" kind="fn"
+  signature
+    fn name="logout"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.auth.refresh" kind="fn"
+  signature
+    fn name="refresh"
+      param name="token" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="new_token"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.auth.verify" kind="fn"
+  signature
+    fn name="verify"
+      param name="token" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.auth.register" kind="fn"
+  signature
+    fn name="register"
+      param name="email" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="user_id"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.users.get" kind="fn"
+  signature
+    fn name="get_user"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="user"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.users.list" kind="fn"
+  signature
+    fn name="list_users"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="users"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.users.create" kind="fn"
+  signature
+    fn name="create_user"
+      param name="data" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="user"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.users.update" kind="fn"
+  signature
+    fn name="update_user"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="user"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.users.delete" kind="fn"
+  signature
+    fn name="delete_user"
+      param name="id" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.products.get" kind="fn"
+  signature
+    fn name="get_product"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="product"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.products.list" kind="fn"
+  signature
+    fn name="list_products"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="products"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.products.create" kind="fn"
+  signature
+    fn name="create_product"
+      param name="data" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="product"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.products.update" kind="fn"
+  signature
+    fn name="update_product"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="product"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.products.delete" kind="fn"
+  signature
+    fn name="delete_product"
+      param name="id" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.orders.get" kind="fn"
+  signature
+    fn name="get_order"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="order"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.orders.list" kind="fn"
+  signature
+    fn name="list_orders"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="orders"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.orders.create" kind="fn"
+  signature
+    fn name="create_order"
+      param name="data" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="order"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.orders.update" kind="fn"
+  signature
+    fn name="update_order"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="order"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.orders.cancel" kind="fn"
+  signature
+    fn name="cancel_order"
+      param name="id" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.payments.charge" kind="fn"
+  signature
+    fn name="charge"
+      param name="amount" type="Int"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="payment_id"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.payments.refund" kind="fn"
+  signature
+    fn name="refund"
+      param name="id" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.payments.status" kind="fn"
+  signature
+    fn name="payment_status"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="completed"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.payments.methods" kind="fn"
+  signature
+    fn name="payment_methods"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="methods"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.payments.subscribe" kind="fn"
+  signature
+    fn name="subscribe"
+      param name="plan" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="subscription"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.shipping.rates" kind="fn"
+  signature
+    fn name="shipping_rates"
+      param name="address" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="rates"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.shipping.track" kind="fn"
+  signature
+    fn name="track_shipment"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="tracking"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.shipping.label" kind="fn"
+  signature
+    fn name="create_label"
+      param name="order_id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="label_url"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.shipping.carriers" kind="fn"
+  signature
+    fn name="list_carriers"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="carriers"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.shipping.estimate" kind="fn"
+  signature
+    fn name="estimate_delivery"
+      param name="carrier" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="estimate"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.inventory.check" kind="fn"
+  signature
+    fn name="check_stock"
+      param name="sku" type="String"
+      returns type="Int"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=100
+      as="_"
+    end
+  end
+end
+
+snippet id="api.inventory.reserve" kind="fn"
+  signature
+    fn name="reserve_stock"
+      param name="sku" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.inventory.release" kind="fn"
+  signature
+    fn name="release_stock"
+      param name="sku" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.inventory.adjust" kind="fn"
+  signature
+    fn name="adjust_stock"
+      param name="sku" type="String"
+      returns type="Int"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=50
+      as="_"
+    end
+  end
+end
+
+snippet id="api.inventory.history" kind="fn"
+  signature
+    fn name="stock_history"
+      param name="sku" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="history"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.reviews.get" kind="fn"
+  signature
+    fn name="get_review"
+      param name="id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="review"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.reviews.list" kind="fn"
+  signature
+    fn name="list_reviews"
+      param name="product_id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="reviews"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.reviews.create" kind="fn"
+  signature
+    fn name="create_review"
+      param name="data" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="review"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.reviews.moderate" kind="fn"
+  signature
+    fn name="moderate_review"
+      param name="id" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.reviews.stats" kind="fn"
+  signature
+    fn name="review_stats"
+      param name="product_id" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="stats"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.search.query" kind="fn"
+  signature
+    fn name="search"
+      param name="q" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="results"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.search.suggest" kind="fn"
+  signature
+    fn name="suggest"
+      param name="prefix" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="suggestions"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.search.facets" kind="fn"
+  signature
+    fn name="facets"
+      param name="q" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="facets"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.search.index" kind="fn"
+  signature
+    fn name="reindex"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.search.synonyms" kind="fn"
+  signature
+    fn name="synonyms"
+      param name="term" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="synonyms"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.analytics.events" kind="fn"
+  signature
+    fn name="track_event"
+      param name="event" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.analytics.pageview" kind="fn"
+  signature
+    fn name="track_pageview"
+      param name="url" type="String"
+      returns type="Bool"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit=true
+      as="_"
+    end
+  end
+end
+
+snippet id="api.analytics.report" kind="fn"
+  signature
+    fn name="generate_report"
+      param name="type" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="report"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.analytics.dashboard" kind="fn"
+  signature
+    fn name="dashboard_data"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="dashboard"
+      as="_"
+    end
+  end
+end
+
+snippet id="api.analytics.export" kind="fn"
+  signature
+    fn name="export_data"
+      param name="format" type="String"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="export_url"
+      as="_"
+    end
+  end
+end
+
+// -----------------------------------------------------------------------------
+// Query Functions for Benchmarking
+// -----------------------------------------------------------------------------
+
+snippet id="benchmark.query_all_data" kind="fn"
+  note "Query all data nodes"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_all_data"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      as="results"
+    end
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+
+snippet id="benchmark.query_all_fn" kind="fn"
+  note "Query all function nodes"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_all_fn"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="fn"
+      end
+      as="results"
+    end
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+
+snippet id="benchmark.query_all" kind="fn"
+  note "Query all nodes without filter"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_all"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      as="results"
+    end
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+
+snippet id="benchmark.query_by_id" kind="fn"
+  note "Query single node by ID"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_by_id"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="id" lit="docs.api.auth"
+      end
+      limit=1
+      as="result"
+    end
+    step id="s2" kind="return"
+      from="result"
+      as="_"
+    end
+  end
+end
+
+snippet id="benchmark.query_api_docs" kind="fn"
+  note "Query API documentation nodes (content filter)"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_api_docs"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        and
+          equals field="kind" lit="data"
+          contains field="content" lit="API"
+        end
+      end
+      as="results"
+    end
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+
+snippet id="benchmark.query_sorted_asc" kind="fn"
+  note "Query all data sorted ascending"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_sorted_asc"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      order by="id" dir="asc"
+      as="results"
+    end
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+
+snippet id="benchmark.query_sorted_desc" kind="fn"
+  note "Query all data sorted descending"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_sorted_desc"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      order by="id" dir="desc"
+      as="results"
+    end
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+
+snippet id="benchmark.query_limited" kind="fn"
+  note "Query with limit"
+  effects
+    effect meta
+  end
+  signature
+    fn name="query_limited"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      limit=10
+      as="results"
+    end
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end

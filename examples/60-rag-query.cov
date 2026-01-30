@@ -1,0 +1,520 @@
+// Example 60: RAG Query System
+//
+// Demonstrates:
+// - Embedding documentation as data snippets for RAG context
+// - Keyword search using contains field="content"
+// - Relation traversal for neighbor expansion
+// - Combined search+expand for LLM context stuffing
+
+// =============================================================================
+// Data Snippets (embedded in WASM)
+// =============================================================================
+
+snippet id="docs.guide.tutorial" kind="data"
+
+metadata
+  type="document"
+  category="guide"
+  title="Covenant Tutorial"
+end
+
+content
+  """
+# Covenant Tutorial
+
+A step-by-step introduction to writing Covenant programs.
+
+## Prerequisites
+
+This tutorial assumes you understand:
+- Basic programming concepts (functions, variables, types)
+- What a compiler does
+- Why type systems help catch bugs
+
+## 1. Hello World
+
+Every Covenant program is made of snippets. A snippet is a self-contained unit of code with an ID and a kind.
+
+```
+snippet id="main.hello" kind="fn"
+
+effects
+  effect console
+end
+
+signature
+  fn name="main"
+    returns type="Unit"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="println"
+    arg name="message" lit="Hello, world!"
+    as="_"
+  end
+end
+
+end
+```
+
+## 2. Pure Functions
+
+Functions without side effects don't need an effects section. Use compute steps with op=add, op=mul, etc.
+
+## 3. Adding Effects
+
+When your function needs to do I/O, declare the effects like effect filesystem or effect network.
+  """
+end
+
+relations
+  rel to="docs.guide.syntax_examples" type=related_to
+  rel to="docs.guide.reading_guide" type=related_to
+end
+
+end
+
+snippet id="docs.guide.syntax_examples" kind="data"
+
+metadata
+  type="document"
+  category="guide"
+  title="Covenant Syntax Examples"
+end
+
+content
+  """
+# Covenant Syntax Examples
+
+Minimal examples of every construct. Use this as a quick reference cheat sheet.
+
+## Snippet Kinds
+
+### Function
+```
+snippet id="math.add" kind="fn"
+  signature
+    fn name="add"
+      param name="a" type="Int"
+      returns type="Int"
+    end
+  end
+  body
+    step id="s1" kind="compute"
+      op=add
+      input var="a"
+      input lit=1
+      as="result"
+    end
+  end
+end
+```
+
+### Struct
+```
+snippet id="types.Point" kind="struct"
+  signature
+    struct name="Point"
+      field name="x" type="Int"
+      field name="y" type="Int"
+    end
+  end
+end
+```
+
+## Step Kinds
+
+### Compute
+op=add, op=sub, op=mul, op=div for arithmetic
+op=equals, op=less, op=greater for comparison
+op=and, op=or, op=not for logic
+
+### Query
+Use target="project" for embedded data queries with where clauses.
+
+### Traverse
+Follow relations with direction=outgoing or direction=incoming.
+  """
+end
+
+relations
+  rel to="docs.guide.syntax_reference" type=related_to
+  rel to="docs.guide.patterns" type=related_to
+end
+
+end
+
+snippet id="docs.guide.syntax_reference" kind="data"
+
+metadata
+  type="document"
+  category="guide"
+  title="Covenant Syntax Reference"
+end
+
+content
+  """
+# Covenant Syntax Reference
+
+A comprehensive reference of all keywords and constructs.
+
+## Structure Keywords
+
+### snippet
+Declares a code unit. Every snippet has an ID and kind.
+Valid kinds: fn, struct, enum, database, extern, data
+
+### end
+Closes any block.
+
+## Section Keywords
+
+### effects
+Declares capabilities/side effects: effect database, effect network, effect filesystem
+
+### signature
+Public interface: function signature, struct fields, or enum variants.
+
+### body
+Implementation as a sequence of steps in SSA form.
+
+### relations
+Semantic relationships to other snippets using rel to or rel from.
+
+## Step Kinds
+- compute: Arithmetic and logic operations
+- call: Function or tool invocation
+- query: Data retrieval
+- bind: Variable binding
+- return: Function return
+- if: Conditional execution
+- match: Pattern matching
+- for: Loop over collection
+- traverse: Graph traversal following relations
+
+## Relation Types
+- contains / contained_by: Parent-child
+- describes / described_by: Documentation links
+- related_to: General relation
+- depends_on: Dependency
+  """
+end
+
+relations
+  rel to="docs.guide.stdlib" type=related_to
+end
+
+end
+
+snippet id="docs.guide.patterns" kind="data"
+
+metadata
+  type="document"
+  category="guide"
+  title="Covenant Patterns Catalog"
+end
+
+content
+  """
+# Covenant Patterns Catalog
+
+Common patterns and idioms in Covenant.
+
+## Conditional Execution
+
+### Simple Boolean Check
+Use if step with condition referencing a boolean binding.
+
+### Multi-Way Branch with Match
+Use match step with case arms for each variant.
+
+## Error Handling
+
+### Union Return Type
+Return a union of success type and error types.
+
+### Inline Error Handler
+Use handle block inside the call step for immediate error handling.
+
+## Data Access
+
+### Simple Query
+Use Covenant query syntax with target="project", select all, from, where clauses.
+
+### Traverse Relations
+Use traverse step with follow type=X, depth, and direction.
+
+## Effect Composition
+
+### Pure Function
+Omit the effects section entirely for functions with no side effects.
+
+### Effectful Function
+Declare all required effects like effect database, effect network.
+  """
+end
+
+relations
+  rel to="docs.guide.stdlib" type=related_to
+end
+
+end
+
+snippet id="docs.guide.stdlib" kind="data"
+
+metadata
+  type="document"
+  category="guide"
+  title="Standard Library Reference"
+end
+
+content
+  """
+# Standard Library Reference
+
+All functions available in Covenant's standard library.
+
+## Console (effect console)
+- console.println: Print message
+- console.info, console.debug, console.warn, console.error
+
+## HTTP (effect network)
+- http.get: GET request
+- http.post: POST request
+- http.put, http.delete: Other methods
+
+## Filesystem (effect filesystem)
+- fs.read_file: Read file contents
+- fs.write_file: Write to file
+- fs.exists: Check if path exists
+- fs.mkdir: Create directory
+
+## JSON (pure)
+- json.parse: Parse JSON string
+- json.stringify: Serialize to JSON
+- json.get_field: Extract field from object
+
+## Storage (effect std.storage)
+- std.storage.kv.set/get/delete: Key-value operations
+- std.storage.doc.put/get/query: Document storage
+  """
+end
+
+relations
+  rel to="docs.guide.syntax_reference" type=related_to
+end
+
+end
+
+snippet id="docs.guide.reading_guide" kind="data"
+
+metadata
+  type="document"
+  category="guide"
+  title="Reading Covenant: A Guide for Humans"
+end
+
+content
+  """
+# Reading Covenant: A Guide for Humans
+
+Covenant is designed as a machine-first intermediate representation.
+
+## Why the Verbosity?
+
+Covenant optimizes for:
+- Deterministic generation (one way to write everything)
+- Queryable structure (every node is addressable)
+- Explicit effects (no hidden side effects)
+- Token stability (predictable sequences for AI)
+
+## The Reading Strategy
+
+### Top-to-Bottom, Always
+1. Snippet header - What is this? (id, kind)
+2. Effects - What capabilities does it need?
+3. Signature - What's the interface?
+4. Body - What does it do, step by step?
+
+## SSA Form Explained
+
+SSA (Static Single Assignment) means:
+- Each variable is assigned exactly once
+- No mutation after assignment
+- Every operation creates a new binding
+
+## Why No Operators?
+
+Covenant uses keywords instead of symbols:
+- x + y becomes op=add input var="x" input var="y"
+- x == y becomes op=equals input var="x" input var="y"
+
+Benefits: No precedence rules, queryable, explicit order, token stability.
+  """
+end
+
+relations
+  rel to="docs.guide.tutorial" type=related_to
+end
+
+end
+
+// =============================================================================
+// Query Functions for RAG
+// =============================================================================
+
+snippet id="rag.search_by_keyword" kind="fn"
+
+  note "Search documents by keyword in content"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="search_by_keyword"
+      param name="keyword" type="String"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        and
+          equals field="kind" lit="data"
+          contains field="content" var="keyword"
+        end
+      end
+      as="results"
+    end
+
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="rag.get_all_docs" kind="fn"
+
+  note "Get all documentation nodes"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="get_all_docs"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      as="docs"
+    end
+
+    step id="s2" kind="return"
+      from="docs"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="rag.get_related" kind="fn"
+
+  note "Get related documents via related_to relation"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="get_related"
+      param name="doc_id" type="String"
+      returns type="Any"
+    end
+  end
+
+  body
+    // First find the node by id
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="id" var="doc_id"
+      end
+      limit=1
+      as="source"
+    end
+
+    // Then traverse from the found node
+    step id="s2" kind="traverse"
+      target="project"
+      from="source"
+      follow type=related_to
+      depth=1
+      direction=outgoing
+      as="related"
+    end
+
+    step id="s3" kind="return"
+      from="related"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="rag.get_doc_by_id" kind="fn"
+
+  note "Get a specific document by ID"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="get_doc_by_id"
+      param name="doc_id" type="String"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        and
+          equals field="kind" lit="data"
+          equals field="id" var="doc_id"
+        end
+      end
+      limit=1
+      as="doc"
+    end
+
+    step id="s2" kind="return"
+      from="doc"
+      as="_"
+    end
+  end
+
+end

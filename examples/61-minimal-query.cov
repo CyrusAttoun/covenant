@@ -1,0 +1,49 @@
+// Test with a function that ADDS A STRING to data segment
+
+snippet id="docs.hello" kind="data"
+  content """Hello""" end
+end
+
+snippet id="docs.readme" kind="data"
+  content """Readme""" end
+end
+
+// Function that returns a STRING literal (adds to data segment!)
+snippet id="main.hello" kind="fn"
+  signature
+    fn name="hello"
+      returns type="String"
+    end
+  end
+  body
+    step id="s1" kind="return"
+      lit="Hello, World!"
+      as="_"
+    end
+  end
+end
+
+// Query function
+snippet id="query.find_docs" kind="fn"
+  effects effect meta end
+  signature
+    fn name="find_docs"
+      returns type="Any"
+    end
+  end
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" lit="data"
+      end
+      as="docs"
+    end
+    step id="s2" kind="return"
+      from="docs"
+      as="_"
+    end
+  end
+end

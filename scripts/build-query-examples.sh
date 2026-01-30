@@ -3,9 +3,12 @@
 # Build script for query examples
 #
 # This script compiles the query example programs to WASM:
-# - Example 50: Simple embedded query
-# - Example 20: Knowledge base traversal
 # - Example 14: Project queries (symbol graph)
+# - Example 20: Knowledge base traversal
+# - Example 50: Simple embedded query
+# - Example 51: Symbol metadata embedding
+# - Example 52: Relation traversal
+# - Example 53: Performance benchmark
 
 set -e  # Exit on error
 
@@ -50,9 +53,12 @@ compile_example() {
 }
 
 # Compile examples
-compile_example "50" "embedded-query-simple" || true
-compile_example "20" "knowledge-base" || true
 compile_example "14" "project-queries" || true
+compile_example "20" "knowledge-base" || true
+compile_example "50" "embedded-query-simple" || true
+compile_example "51" "symbol-metadata-test" || true
+compile_example "52" "relation-traversal" || true
+compile_example "53" "performance-benchmark" || true
 
 echo -e "${GREEN}=== Build Complete ===${NC}\n"
 
@@ -62,6 +68,9 @@ ls -lh ./examples/*.wasm 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'  || ech
 echo ""
 
 echo "To run tests:"
-echo "  deno run --allow-read examples/50-test.ts"
-echo "  deno run --allow-read examples/20-test.ts"
 echo "  deno run --allow-read examples/14-test.ts"
+echo "  deno run --allow-read examples/20-test.ts"
+echo "  deno run --allow-read examples/50-test-comprehensive.ts"
+echo "  deno run --allow-read examples/51-test.ts"
+echo "  deno run --allow-read examples/52-test.ts"
+echo "  deno run --allow-read examples/53-benchmark.ts"

@@ -15,9 +15,10 @@ use wasm_encoder::{
 };
 use covenant_ast::{
     BindSource, BindStep, CallStep, ComputeStep, Condition, EffectsSection, ForStep, FunctionSignature,
-    InputSource, IfStep, Literal, MatchPattern, MatchStep, Operation, QueryContent,
+    InputSource, IfStep, Literal, MatchPattern, MatchStep, Operation, OrderClause, QueryContent,
     QueryStep, ReturnStep, ReturnType, ReturnValue, Section, SignatureKind, Snippet, SnippetKind,
-    Step, StepKind, StructConstruction, Type, TypeKind,
+    SnippetOrderDirection, Step, StepKind, StructConstruction, TraverseDepth, TraverseDirection,
+    TraverseStep, Type, TypeKind,
 };
 use covenant_checker::SymbolTable;
 use crate::CodegenError;
@@ -453,10 +454,14 @@ impl<'a> SnippetWasmCompiler<'a> {
             module.section(&memory);
         }
 
+        // Pre-allocate strings used by traverse steps before calculating heap pointer.
+        // This ensures the heap doesn't overlap with string data in the data segment.
+        self.pre_allocate_step_strings(snippets);
+
         // Global section for heap pointer
         if needs_memory {
             let mut globals = GlobalSection::new();
-            // Heap pointer starts after all data (graph + strings)
+            // Heap pointer starts after all data (graph + strings + traverse strings)
             let heap_start = self.data_segment.len() as i32;
             globals.global(
                 GlobalType {
@@ -713,10 +718,14 @@ impl<'a> SnippetWasmCompiler<'a> {
             module.section(&memory);
         }
 
+        // Pre-allocate strings used by traverse steps before calculating heap pointer.
+        // This ensures the heap doesn't overlap with string data in the data segment.
+        self.pre_allocate_step_strings(snippets);
+
         // Global section for heap pointer
         if needs_memory {
             let mut globals = GlobalSection::new();
-            // Heap pointer starts after all data (graph + strings + symbol JSON)
+            // Heap pointer starts after all data (graph + strings + symbol JSON + traverse strings)
             let heap_start = self.data_segment.len() as i32;
             globals.global(
                 GlobalType {
@@ -806,6 +815,67 @@ impl<'a> SnippetWasmCompiler<'a> {
         func.instruction(&Instruction::End);
 
         func
+    }
+
+    /// Pre-allocate strings used by traverse and query steps to ensure they're in the data segment
+    /// before the heap pointer is calculated. This prevents heap allocations from overwriting
+    /// the data segment.
+    fn pre_allocate_step_strings(&mut self, snippets: &[Snippet]) {
+        for snippet in snippets {
+            if snippet.kind != SnippetKind::Function {
+                continue;
+            }
+
+            // Find body section and scan for traverse and query steps
+            for section in &snippet.sections {
+                if let Section::Body(body) = section {
+                    for step in &body.steps {
+                        match &step.kind {
+                            StepKind::Traverse(traverse) => {
+                                // Pre-allocate the starting node ID - always add it
+                                // since we can't know at this point if it will be a variable
+                                // reference or literal (locals aren't populated yet)
+                                self.data_segment.add_string(&traverse.from);
+                                // Pre-allocate the relation type string
+                                self.data_segment.add_string(&traverse.relation_type);
+                            }
+                            StepKind::Query(query) => {
+                                // Pre-allocate string literals from query conditions
+                                if let QueryContent::Covenant(cov_query) = &query.content {
+                                    if let Some(condition) = &cov_query.where_clause {
+                                        self.pre_allocate_condition_strings(condition);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Recursively pre-allocate string literals from query conditions
+    fn pre_allocate_condition_strings(&mut self, condition: &Condition) {
+        use covenant_ast::ConditionKind;
+        match &condition.kind {
+            ConditionKind::Equals { value, .. }
+            | ConditionKind::Contains { value, .. }
+            | ConditionKind::NotEquals { value, .. } => {
+                if let InputSource::Lit(Literal::String(s)) = value {
+                    self.data_segment.add_string(s);
+                }
+            }
+            ConditionKind::And(left, right) | ConditionKind::Or(left, right) => {
+                self.pre_allocate_condition_strings(left);
+                self.pre_allocate_condition_strings(right);
+            }
+            ConditionKind::RelTo { target, rel_type } | ConditionKind::RelFrom { source: target, rel_type } => {
+                // Pre-allocate relation strings as well
+                self.data_segment.add_string(target);
+                self.data_segment.add_string(rel_type);
+            }
+        }
     }
 
     /// Register imports for the given effects
@@ -1071,12 +1141,31 @@ impl<'a> SnippetWasmCompiler<'a> {
                         count += 1;
                     }
                 }
-                StepKind::Query(_) => {
+                StepKind::Query(query_step) => {
                     // Query steps need many temp locals for execution:
                     // - 4 for basic loop control (total_nodes, current_idx, result_ptr, result_count)
                     // - Up to ~16 for string comparison in WHERE clauses
-                    // Allocate 20 to be safe
-                    count += 20;
+                    // - Up to ~16 for ORDER BY sorting (i, j, key_idx, key_fat_ptr, key_ptr, key_len,
+                    //   cmp_idx, cmp_fat_ptr, cmp_ptr, cmp_len, cmp_result, temp, + strcmp locals)
+                    // Check if ORDER BY is present
+                    let has_order = match &query_step.content {
+                        QueryContent::Covenant(cov) => cov.order.is_some(),
+                        _ => false,
+                    };
+                    if has_order {
+                        count += 40; // Extra for ORDER BY sorting + string comparison
+                    } else {
+                        count += 20;
+                    }
+                }
+                StepKind::Traverse(_) => {
+                    // Traverse steps need many temp locals:
+                    // - 3 for basic execution (start_node, result_ptr, result_count)
+                    // - 2 for resolving from variable (temp_ptr, temp_count)
+                    // - 9 for direction traversal (rel_count, rel_idx, packed_rel, target_idx, rel_type_idx, type_matches, etc.)
+                    // - 5 for relation type comparison (type_fat_ptr, type_ptr, type_len, cmp_idx)
+                    // Allocate 25 to be safe
+                    count += 25;
                 }
                 _ => {}
             }
@@ -1163,8 +1252,24 @@ impl<'a> SnippetWasmCompiler<'a> {
                     func.instruction(&Instruction::Drop);
                 }
             }
+            StepKind::Traverse(traverse) => {
+                // Compile traverse step for project targets
+                if traverse.target == "project" {
+                    self.compile_project_traverse(traverse, func)?;
+                } else {
+                    // Non-project traversals not yet supported - return empty result
+                    func.instruction(&Instruction::I64Const(0));
+                }
+                // Handle output binding
+                if step.output_binding != "_" {
+                    let local = self.allocate_local(&step.output_binding);
+                    func.instruction(&Instruction::LocalSet(local));
+                } else {
+                    func.instruction(&Instruction::Drop);
+                }
+            }
             StepKind::Insert(_) | StepKind::Update(_) | StepKind::Delete(_) |
-            StepKind::Transaction(_) | StepKind::Traverse(_) => {
+            StepKind::Transaction(_) => {
                 // These require database/meta effects and runtime support.
                 // Generate a placeholder value (i64 0) for the binding.
                 // At runtime, the host would intercept these via effect imports.
@@ -1641,9 +1746,8 @@ impl<'a> SnippetWasmCompiler<'a> {
         func.instruction(&Instruction::End); // end block
 
         // Step 4: Apply ORDER BY (if present)
-        if let Some(ref _order) = cov_query.order {
-            // TODO: Implement sorting
-            // For now, skip ordering - results are in insertion order
+        if let Some(ref order) = cov_query.order {
+            self.compile_order_by(order, result_ptr, result_count, &gai, func)?;
         }
 
         // Step 5: Apply LIMIT (if present)
@@ -1667,6 +1771,467 @@ impl<'a> SnippetWasmCompiler<'a> {
         func.instruction(&Instruction::I64Shl);
         func.instruction(&Instruction::LocalGet(result_count));
         func.instruction(&Instruction::I64Or);
+
+        Ok(())
+    }
+
+    /// Compile a project traverse step (target="project") using GAI functions
+    /// Returns fat pointer (result_ptr << 32 | result_count) on stack
+    fn compile_project_traverse(
+        &mut self,
+        traverse: &TraverseStep,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        let gai = match self.gai_indices.as_ref() {
+            Some(g) => g.clone(),
+            None => {
+                // No GAI functions available - return empty result
+                func.instruction(&Instruction::I64Const(0));
+                return Ok(());
+            }
+        };
+
+        // Allocate locals for traverse execution
+        let start_node = self.allocate_local("__traverse_start");
+        let result_ptr = self.allocate_local("__traverse_result_ptr");
+        let result_count = self.allocate_local("__traverse_result_count");
+
+        // Resolve starting node from traverse.from
+        self.compile_traverse_from(&traverse.from, &gai, start_node, func)?;
+
+        // Check if start node is valid (-1 means not found)
+        func.instruction(&Instruction::LocalGet(start_node));
+        func.instruction(&Instruction::I64Const(-1));
+        func.instruction(&Instruction::I64Eq);
+        func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+        // Invalid start - return empty result
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::Else);
+
+        // Allocate result array on heap
+        // For simplicity, allocate space for up to 256 results (256 * 4 bytes = 1024)
+        func.instruction(&Instruction::GlobalGet(0)); // heap_ptr (i32)
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(result_ptr));
+
+        // Initialize result_count = 0
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(result_count));
+
+        // Handle depth - for MVP, only support single-hop (depth=1 or Bounded(1))
+        match traverse.depth {
+            TraverseDepth::Bounded(0) => {
+                // depth=0 means nothing - return empty result
+                // result_count is already 0
+            }
+            TraverseDepth::Bounded(1) | TraverseDepth::Unbounded | TraverseDepth::Bounded(_) => {
+                // Single-hop traversal (unbounded treated as single-hop for MVP)
+                self.compile_single_hop_traverse(
+                    traverse,
+                    start_node,
+                    result_ptr,
+                    result_count,
+                    &gai,
+                    func,
+                )?;
+            }
+        }
+
+        // Update heap pointer (result_ptr + result_count * 4)
+        func.instruction(&Instruction::LocalGet(result_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(result_count));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::GlobalSet(0));
+
+        // Return fat pointer (result_ptr << 32 | result_count)
+        func.instruction(&Instruction::LocalGet(result_ptr));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64Shl);
+        func.instruction(&Instruction::LocalGet(result_count));
+        func.instruction(&Instruction::I64Or);
+
+        func.instruction(&Instruction::End); // end if (valid start node check)
+
+        Ok(())
+    }
+
+    /// Resolve starting node from traverse.from (variable reference or literal ID)
+    fn compile_traverse_from(
+        &mut self,
+        from: &str,
+        gai: &GaiFunctionIndices,
+        result_local: u32,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        // Check if 'from' is a local variable reference
+        if let Some(&local_idx) = self.locals.get(from) {
+            // Variable - load and check if it's a query result (fat pointer) or node index
+            // For query results, we need to extract the first node index
+            // For simplicity, assume it's a fat pointer and get the first result
+            func.instruction(&Instruction::LocalGet(local_idx));
+            // If it's a fat pointer from a query, extract ptr and load first node index
+            // Check if count > 0, if so load first element
+            let temp_ptr = self.allocate_local("__from_ptr");
+            let temp_count = self.allocate_local("__from_count");
+
+            // Duplicate and unpack fat pointer
+            func.instruction(&Instruction::LocalTee(temp_ptr));
+            func.instruction(&Instruction::I64Const(32));
+            func.instruction(&Instruction::I64ShrU);
+            func.instruction(&Instruction::LocalSet(temp_ptr)); // ptr part
+
+            func.instruction(&Instruction::LocalGet(local_idx));
+            func.instruction(&Instruction::I64Const(0xFFFFFFFF));
+            func.instruction(&Instruction::I64And);
+            func.instruction(&Instruction::LocalSet(temp_count)); // count part
+
+            // Check if count > 0
+            func.instruction(&Instruction::LocalGet(temp_count));
+            func.instruction(&Instruction::I64Const(0));
+            func.instruction(&Instruction::I64GtU);
+            func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+            // count > 0: load first node index from result array
+            func.instruction(&Instruction::LocalGet(temp_ptr));
+            func.instruction(&Instruction::I32WrapI64);
+            func.instruction(&Instruction::I32Load(MemArg {
+                offset: 0,
+                align: 2,
+                memory_index: 0,
+            }));
+            func.instruction(&Instruction::I64ExtendI32S);
+            func.instruction(&Instruction::Else);
+            // count == 0: return -1 (not found)
+            func.instruction(&Instruction::I64Const(-1));
+            func.instruction(&Instruction::End);
+
+            func.instruction(&Instruction::LocalSet(result_local));
+        } else {
+            // Literal node ID - use _gai_find_by_id
+            let id_offset = self.data_segment.add_string(from);
+            let id_len = from.len() as i32;
+
+            func.instruction(&Instruction::I32Const(id_offset as i32));
+            func.instruction(&Instruction::I32Const(id_len));
+            func.instruction(&Instruction::Call(gai.find_by_id));
+            // Result is i32 (-1 if not found), extend to i64
+            func.instruction(&Instruction::I64ExtendI32S);
+            func.instruction(&Instruction::LocalSet(result_local));
+        }
+        Ok(())
+    }
+
+    /// Compile single-hop traversal
+    fn compile_single_hop_traverse(
+        &mut self,
+        traverse: &TraverseStep,
+        start_node: u32,
+        result_ptr: u32,
+        result_count: u32,
+        gai: &GaiFunctionIndices,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        // Add relation type string to data segment for comparison
+        let rel_type_offset = self.data_segment.add_string(&traverse.relation_type);
+        let rel_type_len = traverse.relation_type.len() as i32;
+
+        match traverse.direction {
+            TraverseDirection::Outgoing => {
+                self.compile_traverse_direction(
+                    start_node,
+                    gai.get_outgoing_count,
+                    gai.get_outgoing_rel,
+                    rel_type_offset,
+                    rel_type_len,
+                    result_ptr,
+                    result_count,
+                    gai,
+                    func,
+                )?;
+            }
+            TraverseDirection::Incoming => {
+                self.compile_traverse_direction(
+                    start_node,
+                    gai.get_incoming_count,
+                    gai.get_incoming_rel,
+                    rel_type_offset,
+                    rel_type_len,
+                    result_ptr,
+                    result_count,
+                    gai,
+                    func,
+                )?;
+            }
+            TraverseDirection::Both => {
+                // Traverse outgoing first
+                self.compile_traverse_direction(
+                    start_node,
+                    gai.get_outgoing_count,
+                    gai.get_outgoing_rel,
+                    rel_type_offset,
+                    rel_type_len,
+                    result_ptr,
+                    result_count,
+                    gai,
+                    func,
+                )?;
+                // Then incoming
+                self.compile_traverse_direction(
+                    start_node,
+                    gai.get_incoming_count,
+                    gai.get_incoming_rel,
+                    rel_type_offset,
+                    rel_type_len,
+                    result_ptr,
+                    result_count,
+                    gai,
+                    func,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile traversal in one direction (outgoing or incoming)
+    #[allow(clippy::too_many_arguments)]
+    fn compile_traverse_direction(
+        &mut self,
+        start_node: u32,
+        get_count_fn: u32,
+        get_rel_fn: u32,
+        rel_type_offset: u32,
+        rel_type_len: i32,
+        result_ptr: u32,
+        result_count: u32,
+        gai: &GaiFunctionIndices,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        let rel_count = self.allocate_local("__dir_rel_count");
+        let rel_idx = self.allocate_local("__dir_rel_idx");
+        let packed_rel = self.allocate_local("__dir_packed_rel");
+        let target_idx = self.allocate_local("__dir_target_idx");
+        let rel_type_idx = self.allocate_local("__dir_rel_type_idx");
+        let type_matches = self.allocate_local("__dir_type_matches");
+
+        // Get relation count for start node
+        func.instruction(&Instruction::LocalGet(start_node));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::Call(get_count_fn));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(rel_count));
+
+        // rel_idx = 0
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(rel_idx));
+
+        // Loop through relations
+        func.instruction(&Instruction::Block(BlockType::Empty));
+        func.instruction(&Instruction::Loop(BlockType::Empty));
+
+        // Check if rel_idx >= rel_count
+        func.instruction(&Instruction::LocalGet(rel_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(rel_count));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32GeU);
+        func.instruction(&Instruction::BrIf(1)); // break
+
+        // Get packed relation: target_idx << 8 | rel_type_idx
+        func.instruction(&Instruction::LocalGet(start_node));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(rel_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::Call(get_rel_fn));
+        func.instruction(&Instruction::LocalSet(packed_rel));
+
+        // Check for -1 (invalid)
+        func.instruction(&Instruction::LocalGet(packed_rel));
+        func.instruction(&Instruction::I64Const(-1));
+        func.instruction(&Instruction::I64Eq);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        // Skip invalid relation - increment and continue
+        func.instruction(&Instruction::LocalGet(rel_idx));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Add);
+        func.instruction(&Instruction::LocalSet(rel_idx));
+        func.instruction(&Instruction::Br(1)); // continue
+        func.instruction(&Instruction::End);
+
+        // Extract target_idx (bits 8+)
+        func.instruction(&Instruction::LocalGet(packed_rel));
+        func.instruction(&Instruction::I64Const(8));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::LocalSet(target_idx));
+
+        // Extract rel_type_idx (low 8 bits)
+        func.instruction(&Instruction::LocalGet(packed_rel));
+        func.instruction(&Instruction::I64Const(0xFF));
+        func.instruction(&Instruction::I64And);
+        func.instruction(&Instruction::LocalSet(rel_type_idx));
+
+        // Compare relation type
+        self.compile_rel_type_comparison(
+            rel_type_idx,
+            rel_type_offset,
+            rel_type_len,
+            type_matches,
+            gai,
+            func,
+        )?;
+
+        // If type matches, add target to results
+        func.instruction(&Instruction::LocalGet(type_matches));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::If(BlockType::Empty));
+
+        // Store target_idx at result_ptr + result_count * 4
+        func.instruction(&Instruction::LocalGet(result_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(result_count));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::LocalGet(target_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Store(MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+
+        // result_count++
+        func.instruction(&Instruction::LocalGet(result_count));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Add);
+        func.instruction(&Instruction::LocalSet(result_count));
+
+        func.instruction(&Instruction::End); // end if matches
+
+        // rel_idx++
+        func.instruction(&Instruction::LocalGet(rel_idx));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Add);
+        func.instruction(&Instruction::LocalSet(rel_idx));
+        func.instruction(&Instruction::Br(0)); // continue loop
+
+        func.instruction(&Instruction::End); // end loop
+        func.instruction(&Instruction::End); // end block
+
+        Ok(())
+    }
+
+    /// Compare relation type index with expected type string
+    /// Sets matches_local to 1 if equal, 0 otherwise
+    fn compile_rel_type_comparison(
+        &mut self,
+        rel_type_idx_local: u32,
+        expected_offset: u32,
+        expected_len: i32,
+        matches_local: u32,
+        gai: &GaiFunctionIndices,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        let type_fat_ptr = self.allocate_local("__rel_type_fat_ptr");
+        let type_ptr = self.allocate_local("__rel_type_ptr");
+        let type_len = self.allocate_local("__rel_type_len");
+        let cmp_idx = self.allocate_local("__rel_cmp_idx");
+
+        // Call _gai_get_rel_type_name(rel_type_idx) -> fat ptr
+        func.instruction(&Instruction::LocalGet(rel_type_idx_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::Call(gai.get_rel_type_name));
+        func.instruction(&Instruction::LocalSet(type_fat_ptr));
+
+        // Unpack fat pointer
+        func.instruction(&Instruction::LocalGet(type_fat_ptr));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::LocalSet(type_ptr));
+
+        func.instruction(&Instruction::LocalGet(type_fat_ptr));
+        func.instruction(&Instruction::I64Const(0xFFFFFFFF));
+        func.instruction(&Instruction::I64And);
+        func.instruction(&Instruction::LocalSet(type_len));
+
+        // Quick length check
+        func.instruction(&Instruction::LocalGet(type_len));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(expected_len));
+        func.instruction(&Instruction::I32Ne);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        // Lengths differ - set matches = 0
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(matches_local));
+        func.instruction(&Instruction::Else);
+
+        // Lengths match - compare bytes
+        // Initialize matches = 1
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::LocalSet(matches_local));
+
+        // Initialize cmp_idx = 0
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(cmp_idx));
+
+        // Byte comparison loop
+        func.instruction(&Instruction::Block(BlockType::Empty));
+        func.instruction(&Instruction::Loop(BlockType::Empty));
+
+        // Check cmp_idx >= expected_len
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(expected_len));
+        func.instruction(&Instruction::I32GeU);
+        func.instruction(&Instruction::BrIf(1)); // break if done
+
+        // Load byte from type name (from GAI)
+        func.instruction(&Instruction::LocalGet(type_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load8U(MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: 0,
+        }));
+
+        // Load byte from expected (from data segment)
+        func.instruction(&Instruction::I32Const(expected_offset as i32));
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load8U(MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: 0,
+        }));
+
+        // Compare bytes
+        func.instruction(&Instruction::I32Ne);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        // Mismatch - set matches = 0 and break
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(matches_local));
+        func.instruction(&Instruction::Br(2)); // break outer
+        func.instruction(&Instruction::End);
+
+        // cmp_idx++
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Add);
+        func.instruction(&Instruction::LocalSet(cmp_idx));
+        func.instruction(&Instruction::Br(0)); // continue loop
+
+        func.instruction(&Instruction::End); // end loop
+        func.instruction(&Instruction::End); // end block
+
+        func.instruction(&Instruction::End); // end else of length check
 
         Ok(())
     }
@@ -1972,6 +2537,371 @@ impl<'a> SnippetWasmCompiler<'a> {
             func.instruction(&Instruction::I32Const(0));
             Ok(())
         }
+    }
+
+    /// Compile lexicographic string comparison for ORDER BY sorting
+    /// Compares two strings and stores result (-1, 0, or 1) in result_local
+    /// -1: str1 < str2, 0: str1 == str2, 1: str1 > str2
+    fn compile_string_compare(
+        &mut self,
+        str1_ptr: u32,
+        str1_len: u32,
+        str2_ptr: u32,
+        str2_len: u32,
+        result_local: u32,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        // Allocate locals for comparison loop
+        let cmp_idx = self.allocate_local("__strcmp_idx");
+        let min_len = self.allocate_local("__strcmp_min_len");
+        let byte1 = self.allocate_local("__strcmp_byte1");
+        let byte2 = self.allocate_local("__strcmp_byte2");
+
+        // Initialize result to 0 (equal)
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(result_local));
+
+        // Compute min_len = min(str1_len, str2_len)
+        func.instruction(&Instruction::LocalGet(str1_len));
+        func.instruction(&Instruction::LocalGet(str2_len));
+        func.instruction(&Instruction::I64LtU);
+        func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+        func.instruction(&Instruction::LocalGet(str1_len));
+        func.instruction(&Instruction::Else);
+        func.instruction(&Instruction::LocalGet(str2_len));
+        func.instruction(&Instruction::End);
+        func.instruction(&Instruction::LocalSet(min_len));
+
+        // Initialize cmp_idx = 0
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::LocalSet(cmp_idx));
+
+        // Byte comparison loop
+        func.instruction(&Instruction::Block(BlockType::Empty)); // outer block for early exit
+        func.instruction(&Instruction::Loop(BlockType::Empty));
+
+        // Check if cmp_idx >= min_len
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::LocalGet(min_len));
+        func.instruction(&Instruction::I64GeU);
+        func.instruction(&Instruction::BrIf(1)); // break outer if done
+
+        // Load byte1 = str1[cmp_idx]
+        func.instruction(&Instruction::LocalGet(str1_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load8U(MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(byte1));
+
+        // Load byte2 = str2[cmp_idx]
+        func.instruction(&Instruction::LocalGet(str2_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load8U(MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(byte2));
+
+        // If byte1 < byte2: result = -1, break
+        func.instruction(&Instruction::LocalGet(byte1));
+        func.instruction(&Instruction::LocalGet(byte2));
+        func.instruction(&Instruction::I64LtU);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        func.instruction(&Instruction::I64Const(-1i64));
+        func.instruction(&Instruction::LocalSet(result_local));
+        func.instruction(&Instruction::Br(2)); // break outer
+        func.instruction(&Instruction::End);
+
+        // If byte1 > byte2: result = 1, break
+        func.instruction(&Instruction::LocalGet(byte1));
+        func.instruction(&Instruction::LocalGet(byte2));
+        func.instruction(&Instruction::I64GtU);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::LocalSet(result_local));
+        func.instruction(&Instruction::Br(2)); // break outer
+        func.instruction(&Instruction::End);
+
+        // Increment cmp_idx
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Add);
+        func.instruction(&Instruction::LocalSet(cmp_idx));
+        func.instruction(&Instruction::Br(0)); // continue loop
+
+        func.instruction(&Instruction::End); // end loop
+        func.instruction(&Instruction::End); // end outer block
+
+        // If we get here, all compared bytes were equal
+        // Compare lengths: shorter string < longer string
+        func.instruction(&Instruction::LocalGet(str1_len));
+        func.instruction(&Instruction::LocalGet(str2_len));
+        func.instruction(&Instruction::I64LtU);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        func.instruction(&Instruction::I64Const(-1i64));
+        func.instruction(&Instruction::LocalSet(result_local));
+        func.instruction(&Instruction::Else);
+        func.instruction(&Instruction::LocalGet(str1_len));
+        func.instruction(&Instruction::LocalGet(str2_len));
+        func.instruction(&Instruction::I64GtU);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::LocalSet(result_local));
+        func.instruction(&Instruction::End);
+        func.instruction(&Instruction::End);
+
+        Ok(())
+    }
+
+    /// Compile ORDER BY sorting using insertion sort
+    /// Sorts the result array in-place by the specified field
+    fn compile_order_by(
+        &mut self,
+        order: &OrderClause,
+        result_ptr_local: u32,
+        result_count_local: u32,
+        gai: &GaiFunctionIndices,
+        func: &mut Function,
+    ) -> Result<(), CodegenError> {
+        // Determine which GAI function to use for field access
+        let gai_func_idx = match order.field.as_str() {
+            "id" => gai.get_node_id,
+            "kind" => gai.get_node_kind,
+            "content" => gai.get_node_content,
+            _ => {
+                // Unknown field - skip sorting
+                return Ok(());
+            }
+        };
+
+        // Allocate locals for insertion sort
+        let i = self.allocate_local("__sort_i");
+        let j = self.allocate_local("__sort_j");
+        let key_idx = self.allocate_local("__sort_key_idx");
+        let key_fat_ptr = self.allocate_local("__sort_key_fat_ptr");
+        let key_ptr = self.allocate_local("__sort_key_ptr");
+        let key_len = self.allocate_local("__sort_key_len");
+        let cmp_idx = self.allocate_local("__sort_cmp_node_idx");
+        let cmp_fat_ptr = self.allocate_local("__sort_cmp_fat_ptr");
+        let cmp_ptr = self.allocate_local("__sort_cmp_ptr");
+        let cmp_len = self.allocate_local("__sort_cmp_len");
+        let cmp_result = self.allocate_local("__sort_cmp_result");
+        let temp = self.allocate_local("__sort_temp");
+
+        // Wrap entire sort in a block so we can skip if result_count <= 1
+        func.instruction(&Instruction::Block(BlockType::Empty)); // sort_wrapper block
+
+        // Early exit if result_count <= 1 (nothing to sort)
+        func.instruction(&Instruction::LocalGet(result_count_local));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64LeU);
+        func.instruction(&Instruction::BrIf(0)); // break sort_wrapper block, skip sorting
+
+        // Insertion sort: for i = 1 to result_count - 1
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::LocalSet(i));
+
+        func.instruction(&Instruction::Block(BlockType::Empty)); // outer_sort block
+        func.instruction(&Instruction::Loop(BlockType::Empty));  // outer_loop
+
+        // Check if i >= result_count
+        func.instruction(&Instruction::LocalGet(i));
+        func.instruction(&Instruction::LocalGet(result_count_local));
+        func.instruction(&Instruction::I64GeU);
+        func.instruction(&Instruction::BrIf(1)); // break outer_sort
+
+        // key_idx = arr[i] (load i32 from result_ptr + i * 4)
+        func.instruction(&Instruction::LocalGet(result_ptr_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(i));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load(MemArg {
+            offset: 0,
+            align: 2, // 4-byte alignment
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(key_idx));
+
+        // Get key field value: key_fat_ptr = gai_func(key_idx)
+        func.instruction(&Instruction::LocalGet(key_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::Call(gai_func_idx));
+        func.instruction(&Instruction::LocalSet(key_fat_ptr));
+
+        // Unpack key_ptr and key_len from fat pointer
+        func.instruction(&Instruction::LocalGet(key_fat_ptr));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::LocalSet(key_ptr));
+        func.instruction(&Instruction::LocalGet(key_fat_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(key_len));
+
+        // j = i
+        func.instruction(&Instruction::LocalGet(i));
+        func.instruction(&Instruction::LocalSet(j));
+
+        // Inner loop: while j > 0 && compare(arr[j-1], key) > 0
+        func.instruction(&Instruction::Block(BlockType::Empty)); // inner_sort block
+        func.instruction(&Instruction::Loop(BlockType::Empty));  // inner_loop
+
+        // Check if j <= 0
+        func.instruction(&Instruction::LocalGet(j));
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::I64LeU);
+        func.instruction(&Instruction::BrIf(1)); // break inner_sort
+
+        // Load arr[j-1] node index
+        func.instruction(&Instruction::LocalGet(result_ptr_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(j));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Sub);
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load(MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(cmp_idx));
+
+        // Get cmp field value
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::Call(gai_func_idx));
+        func.instruction(&Instruction::LocalSet(cmp_fat_ptr));
+
+        // Unpack cmp_ptr and cmp_len
+        func.instruction(&Instruction::LocalGet(cmp_fat_ptr));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::LocalSet(cmp_ptr));
+        func.instruction(&Instruction::LocalGet(cmp_fat_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(cmp_len));
+
+        // Compare: cmp_result = compare(key, arr[j-1])
+        // Note: swapped order to key vs cmp (rather than cmp vs key)
+        self.compile_string_compare(key_ptr, key_len, cmp_ptr, cmp_len, cmp_result, func)?;
+
+        // With swapped comparison: compare(key, arr[j-1])
+        // Returns -1 if key < arr[j-1], 0 if equal, 1 if key > arr[j-1]
+        // For ASC: continue shifting while key < arr[j-1], break when key >= arr[j-1]
+        // For DESC: continue shifting while key > arr[j-1], break when key <= arr[j-1]
+        match order.direction {
+            SnippetOrderDirection::Asc => {
+                // Break if cmp_result >= 0 (key >= arr[j-1])
+                func.instruction(&Instruction::LocalGet(cmp_result));
+                func.instruction(&Instruction::I64Const(0));
+                func.instruction(&Instruction::I64GeS);
+                func.instruction(&Instruction::BrIf(1)); // break inner_sort
+            }
+            SnippetOrderDirection::Desc => {
+                // Break if cmp_result <= 0 (key <= arr[j-1])
+                func.instruction(&Instruction::LocalGet(cmp_result));
+                func.instruction(&Instruction::I64Const(0));
+                func.instruction(&Instruction::I64LeS);
+                func.instruction(&Instruction::BrIf(1)); // break inner_sort
+            }
+        }
+
+        // arr[j] = arr[j-1]
+        // First load arr[j-1]
+        func.instruction(&Instruction::LocalGet(result_ptr_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(j));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Sub);
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load(MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(temp));
+
+        // Store to arr[j]
+        func.instruction(&Instruction::LocalGet(result_ptr_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(j));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::LocalGet(temp));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Store(MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+
+        // j = j - 1
+        func.instruction(&Instruction::LocalGet(j));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Sub);
+        func.instruction(&Instruction::LocalSet(j));
+
+        func.instruction(&Instruction::Br(0)); // continue inner_loop
+
+        func.instruction(&Instruction::End); // end inner_loop
+        func.instruction(&Instruction::End); // end inner_sort block
+
+        // arr[j] = key_idx
+        func.instruction(&Instruction::LocalGet(result_ptr_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(j));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(4));
+        func.instruction(&Instruction::I32Mul);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::LocalGet(key_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Store(MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+
+        // i = i + 1
+        func.instruction(&Instruction::LocalGet(i));
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Add);
+        func.instruction(&Instruction::LocalSet(i));
+
+        func.instruction(&Instruction::Br(0)); // continue outer_loop
+
+        func.instruction(&Instruction::End); // end outer_loop
+        func.instruction(&Instruction::End); // end outer_sort block
+        func.instruction(&Instruction::End); // end sort_wrapper block
+
+        Ok(())
     }
 
     /// Compile a compute step

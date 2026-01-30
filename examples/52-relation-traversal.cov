@@ -1,0 +1,240 @@
+// Example 52: Relation Traversal
+//
+// Demonstrates:
+// - Traversing relations between data nodes
+// - Single-hop traversal with type filtering
+// - Direction control (outgoing, incoming)
+
+// -----------------------------------------------------------------------------
+// Data Snippets with Relations
+// -----------------------------------------------------------------------------
+
+snippet id="kb.root" kind="data"
+
+  note "Root documentation node"
+
+  content
+    """
+    Root of the knowledge base
+    """
+  end
+
+  relations
+    rel to="kb.chapter1" type=contains
+    rel to="kb.chapter2" type=contains
+  end
+
+end
+
+snippet id="kb.chapter1" kind="data"
+
+  note "First chapter"
+
+  content
+    """
+    Chapter 1: Introduction
+    """
+  end
+
+  relations
+    rel to="kb.section1a" type=contains
+  end
+
+end
+
+snippet id="kb.chapter2" kind="data"
+
+  note "Second chapter"
+
+  content
+    """
+    Chapter 2: Advanced Topics
+    """
+  end
+
+end
+
+snippet id="kb.section1a" kind="data"
+
+  note "Section within chapter 1"
+
+  content
+    """
+    Section 1.1: Getting Started
+    """
+  end
+
+end
+
+// -----------------------------------------------------------------------------
+// Traversal Functions
+// -----------------------------------------------------------------------------
+
+snippet id="traverse.get_children" kind="fn"
+
+  note "Get direct children of root node via contains relation"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="get_children"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="traverse"
+      target="project"
+      from="kb.root"
+      follow type=contains
+      depth=1
+      direction=outgoing
+      as="children"
+    end
+
+    step id="s2" kind="return"
+      from="children"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="traverse.get_parent" kind="fn"
+
+  note "Get parent of chapter1 via inverse relation"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="get_parent"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="traverse"
+      target="project"
+      from="kb.chapter1"
+      follow type=contained_by
+      depth=1
+      direction=outgoing
+      as="parent"
+    end
+
+    step id="s2" kind="return"
+      from="parent"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="traverse.get_grandchildren" kind="fn"
+
+  note "Get children of chapter1 (grandchildren of root)"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="get_grandchildren"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="traverse"
+      target="project"
+      from="kb.chapter1"
+      follow type=contains
+      depth=1
+      direction=outgoing
+      as="grandchildren"
+    end
+
+    step id="s2" kind="return"
+      from="grandchildren"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="traverse.get_all_incoming" kind="fn"
+
+  note "Get all nodes that have incoming contains relations to section1a"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="get_all_incoming"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="traverse"
+      target="project"
+      from="kb.section1a"
+      follow type=contains
+      depth=1
+      direction=incoming
+      as="parents"
+    end
+
+    step id="s2" kind="return"
+      from="parents"
+      as="_"
+    end
+  end
+
+end
+
+snippet id="traverse.chain_traverse" kind="fn"
+
+  note "Chain traversal: find children then traverse from first result"
+
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="chain_traverse"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="traverse"
+      target="project"
+      from="kb.root"
+      follow type=contains
+      depth=1
+      direction=outgoing
+      as="children"
+    end
+
+    step id="s2" kind="traverse"
+      target="project"
+      from="children"
+      follow type=contains
+      depth=1
+      direction=outgoing
+      as="grandchildren"
+    end
+
+    step id="s3" kind="return"
+      from="grandchildren"
+      as="_"
+    end
+  end
+
+end
