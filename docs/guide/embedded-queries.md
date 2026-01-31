@@ -534,20 +534,12 @@ const docs = extractQueryResults(runner, runner.call("find_docs") as bigint);
 docs.forEach(doc => console.log(doc.id));
 ```
 
-### Known Limitation: No Dynamic String Parameters
+### Alternative: Direct GAI Function Filtering
 
-WASM modules don't export a memory allocator (`cov_alloc`), so you cannot pass string arguments at runtime. This means:
-
-- **Parameterized queries only work with compile-time literals**
-- You cannot dynamically search for user-provided terms
-
-**Workarounds:**
-
-1. **Generate separate query functions** for different search terms at compile time
-2. **Use GAI functions directly** for runtime filtering:
+For advanced use cases or fine-grained control, you can use GAI functions directly for runtime filtering:
 
 ```typescript
-// Search for content at runtime using GAI
+// Search for content at runtime using GAI functions directly
 function searchContent(runner: CovenantQueryRunner, searchTerm: string) {
   const results = [];
   const count = runner.nodeCount();
@@ -567,9 +559,89 @@ function searchContent(runner: CovenantQueryRunner, searchTerm: string) {
   return results;
 }
 
-// Now you can search for any term
+// Search with custom logic (e.g., case-insensitive)
 const matches = searchContent(runner, "user input here");
 ```
+
+This approach gives you full control over the search logic but doesn't leverage the compiled query optimizations.
+
+## Parameterized Queries (Runtime String Parameters)
+
+Starting with the `cov_alloc` export, you can now pass runtime string parameters to query functions. This enables using Covenant as a queryable document database.
+
+### Writing Parameterized Query Functions
+
+Define query functions with string parameters:
+
+```covenant
+snippet id="query.search_content" kind="fn"
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="search_content"
+      param name="term" type="String"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        contains field="content" var="term"
+      end
+      as="results"
+    end
+
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+```
+
+The key differences from literal queries:
+- The function has a `param name="term" type="String"` in its signature
+- The WHERE clause uses `var="term"` instead of `lit="some value"`
+
+### Calling Parameterized Queries
+
+Use the runtime API to allocate strings and call functions:
+
+```typescript
+const runner = new CovenantQueryRunner();
+await runner.load("./my-docs.wasm");
+
+// Method 1: Using queryWithString convenience method
+const results = runner.queryWithString("search_content", "user input");
+const nodes = runner.getQueryResultNodes(results);
+console.log(`Found ${nodes.length} matching documents`);
+
+// Method 2: Manual allocation
+const fatPtr = runner.allocString("user input");
+const results2 = runner.call("search_content", fatPtr) as bigint;
+```
+
+### How It Works
+
+1. **Host allocates memory**: Call `cov_alloc(size)` to get a pointer
+2. **Host writes string**: Write UTF-8 bytes to WASM memory
+3. **Host packs fat pointer**: `(ptr << 32) | len` as BigInt
+4. **Host calls function**: Pass the fat pointer as the string parameter
+5. **WASM unpacks and uses**: Function unpacks the fat pointer and uses it in WHERE clauses
+
+### Supported Operations with Variables
+
+| Operation | Example |
+|-----------|---------|
+| Exact match | `equals field="id" var="param_name"` |
+| Content search | `contains field="content" var="param_name"` |
+| Kind filter | `equals field="kind" var="param_name"` |
 
 ## Architecture
 

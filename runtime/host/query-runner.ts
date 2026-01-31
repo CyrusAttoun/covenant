@@ -303,4 +303,87 @@ export class CovenantQueryRunner {
       (name) => typeof this.instance!.exports[name] === "function"
     );
   }
+
+  /**
+   * Allocate memory in the WASM module using cov_alloc
+   * @param size Number of bytes to allocate
+   * @returns Pointer to allocated memory
+   */
+  alloc(size: number): number {
+    return this.call("cov_alloc", size) as number;
+  }
+
+  /**
+   * Allocate and write a string to WASM memory, return fat pointer as BigInt
+   * Uses cov_alloc for proper memory allocation.
+   * @param str String to allocate
+   * @returns Fat pointer: (ptr << 32) | len
+   */
+  allocString(str: string): bigint {
+    if (!this.memory) {
+      throw new Error("Memory not available");
+    }
+
+    const bytes = new TextEncoder().encode(str);
+    const ptr = this.alloc(bytes.length);
+    new Uint8Array(this.memory.buffer, ptr, bytes.length).set(bytes);
+
+    // Pack as fat pointer: (ptr << 32) | len
+    return (BigInt(ptr) << 32n) | BigInt(bytes.length);
+  }
+
+  /**
+   * Call a query function with a string parameter
+   * Convenience method that allocates the string and calls the function.
+   * @param funcName Name of the query function
+   * @param searchTerm String parameter to pass
+   * @returns Query result (fat pointer to result array)
+   */
+  queryWithString(funcName: string, searchTerm: string): bigint {
+    const fatPtr = this.allocString(searchTerm);
+    return this.call(funcName, fatPtr) as bigint;
+  }
+
+  /**
+   * Extract query results from a fat pointer
+   * Query functions return fat pointers to node index arrays.
+   * @param resultPtr Fat pointer returned by a query function
+   * @returns Array of node indices
+   */
+  extractQueryResults(resultPtr: bigint): number[] {
+    if (!this.memory) {
+      throw new Error("Memory not available");
+    }
+
+    const ptr = Number(resultPtr >> 32n);
+    const count = Number(resultPtr & 0xFFFFFFFFn);
+
+    if (count === 0) return [];
+
+    const view = new DataView(this.memory.buffer, ptr, count * 4);
+    const indices: number[] = [];
+
+    for (let i = 0; i < count; i++) {
+      indices.push(view.getUint32(i * 4, true)); // little-endian
+    }
+
+    return indices;
+  }
+
+  /**
+   * Get node data for query results
+   * @param resultPtr Fat pointer from a query function
+   * @returns Array of {idx, id, content, kind} objects
+   */
+  getQueryResultNodes(
+    resultPtr: bigint
+  ): Array<{ idx: number; id: string; content: string; kind: string }> {
+    const indices = this.extractQueryResults(resultPtr);
+    return indices.map((idx) => ({
+      idx,
+      id: this.readString(this.call("cov_get_node_id", idx) as bigint),
+      content: this.readString(this.call("cov_get_node_content", idx) as bigint),
+      kind: this.readString(this.call("cov_get_node_kind", idx) as bigint),
+    }));
+  }
 }

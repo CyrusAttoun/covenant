@@ -420,6 +420,7 @@ impl<'a> SnippetWasmCompiler<'a> {
                 find_by_id: gai_base_idx + 8,
                 content_contains: gai_base_idx + 9,
                 get_rel_type_name: gai_base_idx + 10,
+                alloc: gai_base_idx + 11,
             });
         }
 
@@ -493,6 +494,7 @@ impl<'a> SnippetWasmCompiler<'a> {
             exports.export("cov_find_by_id", ExportKind::Func, gai.find_by_id);
             exports.export("cov_content_contains", ExportKind::Func, gai.content_contains);
             exports.export("cov_get_rel_type_name", ExportKind::Func, gai.get_rel_type_name);
+            exports.export("cov_alloc", ExportKind::Func, gai.alloc);
         }
         // Export memory if present
         if needs_memory {
@@ -679,6 +681,7 @@ impl<'a> SnippetWasmCompiler<'a> {
                 find_by_id: gai_base_idx + 8,
                 content_contains: gai_base_idx + 9,
                 get_rel_type_name: gai_base_idx + 10,
+                alloc: gai_base_idx + 11,
             });
         }
 
@@ -757,6 +760,7 @@ impl<'a> SnippetWasmCompiler<'a> {
             exports.export("cov_find_by_id", ExportKind::Func, gai.find_by_id);
             exports.export("cov_content_contains", ExportKind::Func, gai.content_contains);
             exports.export("cov_get_rel_type_name", ExportKind::Func, gai.get_rel_type_name);
+            exports.export("cov_alloc", ExportKind::Func, gai.alloc);
         }
         // Export symbol metadata function
         exports.export("_cov_get_symbol_metadata", ExportKind::Func, symbol_metadata_func_idx);
@@ -2341,24 +2345,50 @@ impl<'a> SnippetWasmCompiler<'a> {
         match field {
             "content" => {
                 // Use _gai_content_contains(node_idx, term_ptr, term_len)
-                // Get the search term as a string literal
-                if let InputSource::Lit(Literal::String(search_term)) = value {
-                    // Add string to data segment
-                    let term_offset = self.data_segment.add_string(search_term);
-                    let term_len = search_term.len() as i32;
+                // Push node_idx first (it's common to both cases)
+                func.instruction(&Instruction::LocalGet(node_idx_local));
+                func.instruction(&Instruction::I32WrapI64);
 
-                    // Call _gai_content_contains(node_idx, term_ptr, term_len)
-                    // Note: GAI functions expect i32, our locals are i64
-                    func.instruction(&Instruction::LocalGet(node_idx_local));
-                    func.instruction(&Instruction::I32WrapI64);
-                    func.instruction(&Instruction::I32Const(term_offset as i32));
-                    func.instruction(&Instruction::I32Const(term_len));
-                    func.instruction(&Instruction::Call(gai.content_contains));
-                    // Result is i32 (0 or 1), which is what we need for conditions
-                } else {
-                    // Non-string search term - return false
-                    func.instruction(&Instruction::I32Const(0));
+                match value {
+                    InputSource::Lit(Literal::String(search_term)) => {
+                        // Add string to data segment
+                        let term_offset = self.data_segment.add_string(search_term);
+                        let term_len = search_term.len() as i32;
+
+                        // Push term_ptr and term_len
+                        func.instruction(&Instruction::I32Const(term_offset as i32));
+                        func.instruction(&Instruction::I32Const(term_len));
+                    }
+                    InputSource::Var(var_name) => {
+                        // Load fat pointer from local variable (string parameter)
+                        let var_local = *self.locals.get(var_name).ok_or_else(|| {
+                            CodegenError::UndefinedVariable { name: var_name.clone() }
+                        })?;
+
+                        // Unpack fat pointer: ptr = high 32 bits, len = low 32 bits
+                        // We need i32 values for the GAI function call
+
+                        // Push ptr (high 32 bits)
+                        func.instruction(&Instruction::LocalGet(var_local));
+                        func.instruction(&Instruction::I64Const(32));
+                        func.instruction(&Instruction::I64ShrU);
+                        func.instruction(&Instruction::I32WrapI64);
+
+                        // Push len (low 32 bits)
+                        func.instruction(&Instruction::LocalGet(var_local));
+                        func.instruction(&Instruction::I32WrapI64);
+                    }
+                    _ => {
+                        // Non-string search term - drop node_idx and return false
+                        func.instruction(&Instruction::Drop);
+                        func.instruction(&Instruction::I32Const(0));
+                        return Ok(());
+                    }
                 }
+
+                // Call _gai_content_contains(node_idx, term_ptr, term_len)
+                func.instruction(&Instruction::Call(gai.content_contains));
+                // Result is i32 (0 or 1), which is what we need for conditions
             }
             "id" => {
                 // Check if ID contains substring (convert to string comparison)
@@ -2391,152 +2421,176 @@ impl<'a> SnippetWasmCompiler<'a> {
         gai_func_idx: u32,
         func: &mut Function,
     ) -> Result<(), CodegenError> {
-        // Only support string literal comparisons for now
-        if let InputSource::Lit(Literal::String(expected)) = value {
-            // Allocate locals for string comparison
-            let field_str = self.allocate_local("__field_str");
-            let field_ptr = self.allocate_local("__field_ptr");
-            let field_len = self.allocate_local("__field_len");
-            let expected_ptr = self.allocate_local("__expected_ptr");
-            let expected_len = self.allocate_local("__expected_len");
-            let cmp_idx = self.allocate_local("__cmp_idx");
-            let byte1 = self.allocate_local("__byte1");
-            let byte2 = self.allocate_local("__byte2");
+        // Allocate locals for string comparison
+        let field_str = self.allocate_local("__field_str");
+        let field_ptr = self.allocate_local("__field_ptr");
+        let field_len = self.allocate_local("__field_len");
+        let expected_ptr = self.allocate_local("__expected_ptr");
+        let expected_len = self.allocate_local("__expected_len");
+        let cmp_idx = self.allocate_local("__cmp_idx");
+        let byte1 = self.allocate_local("__byte1");
+        let byte2 = self.allocate_local("__byte2");
 
-            // Add expected string to data segment
-            let exp_offset = self.data_segment.add_string(expected);
-            let exp_len = expected.len() as i32;
+        // Set up expected_ptr and expected_len based on the input source
+        match value {
+            InputSource::Lit(Literal::String(expected)) => {
+                // Add expected string to data segment
+                let exp_offset = self.data_segment.add_string(expected);
+                let exp_len = expected.len() as i32;
 
-            // Store expected string ptr and len (extend i32 to i64 for locals)
-            func.instruction(&Instruction::I32Const(exp_offset as i32));
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(expected_ptr));
-            func.instruction(&Instruction::I32Const(exp_len));
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(expected_len));
+                // Store expected string ptr and len (extend i32 to i64 for locals)
+                func.instruction(&Instruction::I32Const(exp_offset as i32));
+                func.instruction(&Instruction::I64ExtendI32U);
+                func.instruction(&Instruction::LocalSet(expected_ptr));
+                func.instruction(&Instruction::I32Const(exp_len));
+                func.instruction(&Instruction::I64ExtendI32U);
+                func.instruction(&Instruction::LocalSet(expected_len));
+            }
+            InputSource::Var(var_name) => {
+                // Load fat pointer from local variable (string parameter)
+                let var_local = *self.locals.get(var_name).ok_or_else(|| {
+                    CodegenError::UndefinedVariable { name: var_name.clone() }
+                })?;
 
-            // Call GAI function to get field value (returns i64 fat pointer)
-            // Note: GAI functions expect i32 params, but our locals are i64, so wrap
-            func.instruction(&Instruction::LocalGet(node_idx_local));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::Call(gai_func_idx));
-            func.instruction(&Instruction::LocalSet(field_str));
+                // The variable is a fat pointer (i64): ptr in high 32 bits, len in low 32 bits
+                // Unpack: ptr = high 32 bits
+                func.instruction(&Instruction::LocalGet(var_local));
+                func.instruction(&Instruction::I64Const(32));
+                func.instruction(&Instruction::I64ShrU);
+                func.instruction(&Instruction::I32WrapI64);
+                func.instruction(&Instruction::I64ExtendI32U);
+                func.instruction(&Instruction::LocalSet(expected_ptr));
 
-            // Unpack fat pointer: ptr = high 32 bits, len = low 32 bits
-            // Convert to i32, then extend back to i64 for storage in locals
-            func.instruction(&Instruction::LocalGet(field_str));
-            func.instruction(&Instruction::I64Const(32));
-            func.instruction(&Instruction::I64ShrU);
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(field_ptr));
-
-            func.instruction(&Instruction::LocalGet(field_str));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(field_len));
-
-            // Compare lengths first (wrap i64 locals to i32 for comparison)
-            func.instruction(&Instruction::LocalGet(field_len));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::LocalGet(expected_len));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I32Ne);
-            func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
-            // Lengths differ - return false
-            func.instruction(&Instruction::I32Const(0));
-            func.instruction(&Instruction::Else);
-
-            // Lengths match - compare bytes
-            // Initialize cmp_idx = 0 (extend to i64)
-            func.instruction(&Instruction::I32Const(0));
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(cmp_idx));
-
-            // Create a result variable initialized to 1 (true, extend to i64)
-            let match_result = self.allocate_local("__match_result");
-            func.instruction(&Instruction::I32Const(1));
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(match_result));
-
-            // Loop through bytes
-            func.instruction(&Instruction::Block(BlockType::Empty)); // outer
-            func.instruction(&Instruction::Loop(BlockType::Empty));
-
-            // Check if cmp_idx >= field_len (wrap to i32 for comparison)
-            func.instruction(&Instruction::LocalGet(cmp_idx));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::LocalGet(field_len));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I32GeU);
-            func.instruction(&Instruction::BrIf(1)); // break outer
-
-            // Load byte from field (wrap to i32 for address calculation)
-            func.instruction(&Instruction::LocalGet(field_ptr));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::LocalGet(cmp_idx));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I32Add);
-            func.instruction(&Instruction::I32Load8U(MemArg {
-                offset: 0,
-                align: 0,
-                memory_index: 0,
-            }));
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(byte1));
-
-            // Load byte from expected (wrap to i32 for address calculation)
-            func.instruction(&Instruction::LocalGet(expected_ptr));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::LocalGet(cmp_idx));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I32Add);
-            func.instruction(&Instruction::I32Load8U(MemArg {
-                offset: 0,
-                align: 0,
-                memory_index: 0,
-            }));
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(byte2));
-
-            // Compare bytes (wrap to i32 for comparison)
-            func.instruction(&Instruction::LocalGet(byte1));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::LocalGet(byte2));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I32Ne);
-            func.instruction(&Instruction::If(BlockType::Empty));
-            // Mismatch - set result to 0 and break (extend to i64)
-            func.instruction(&Instruction::I32Const(0));
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(match_result));
-            func.instruction(&Instruction::Br(2)); // break outer
-            func.instruction(&Instruction::End);
-
-            // Increment cmp_idx (wrap to i32, add, extend back to i64)
-            func.instruction(&Instruction::LocalGet(cmp_idx));
-            func.instruction(&Instruction::I32WrapI64);
-            func.instruction(&Instruction::I32Const(1));
-            func.instruction(&Instruction::I32Add);
-            func.instruction(&Instruction::I64ExtendI32U);
-            func.instruction(&Instruction::LocalSet(cmp_idx));
-            func.instruction(&Instruction::Br(0)); // continue loop
-
-            func.instruction(&Instruction::End); // end loop
-            func.instruction(&Instruction::End); // end block
-
-            // Return match_result (wrap to i32 for condition result)
-            func.instruction(&Instruction::LocalGet(match_result));
-            func.instruction(&Instruction::I32WrapI64);
-
-            func.instruction(&Instruction::End); // end length check if-else
-
-            Ok(())
-        } else {
-            // Non-string comparison - return false
-            func.instruction(&Instruction::I32Const(0));
-            Ok(())
+                // Unpack: len = low 32 bits
+                func.instruction(&Instruction::LocalGet(var_local));
+                func.instruction(&Instruction::I32WrapI64);
+                func.instruction(&Instruction::I64ExtendI32U);
+                func.instruction(&Instruction::LocalSet(expected_len));
+            }
+            _ => {
+                // Non-string comparison - return false
+                func.instruction(&Instruction::I32Const(0));
+                return Ok(());
+            }
         }
+
+        // Call GAI function to get field value (returns i64 fat pointer)
+        // Note: GAI functions expect i32 params, but our locals are i64, so wrap
+        func.instruction(&Instruction::LocalGet(node_idx_local));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::Call(gai_func_idx));
+        func.instruction(&Instruction::LocalSet(field_str));
+
+        // Unpack fat pointer: ptr = high 32 bits, len = low 32 bits
+        // Convert to i32, then extend back to i64 for storage in locals
+        func.instruction(&Instruction::LocalGet(field_str));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(field_ptr));
+
+        func.instruction(&Instruction::LocalGet(field_str));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(field_len));
+
+        // Compare lengths first (wrap i64 locals to i32 for comparison)
+        func.instruction(&Instruction::LocalGet(field_len));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(expected_len));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Ne);
+        func.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+        // Lengths differ - return false
+        func.instruction(&Instruction::I32Const(0));
+        func.instruction(&Instruction::Else);
+
+        // Lengths match - compare bytes
+        // Initialize cmp_idx = 0 (extend to i64)
+        func.instruction(&Instruction::I32Const(0));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(cmp_idx));
+
+        // Create a result variable initialized to 1 (true, extend to i64)
+        let match_result = self.allocate_local("__match_result");
+        func.instruction(&Instruction::I32Const(1));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(match_result));
+
+        // Loop through bytes
+        func.instruction(&Instruction::Block(BlockType::Empty)); // outer
+        func.instruction(&Instruction::Loop(BlockType::Empty));
+
+        // Check if cmp_idx >= field_len (wrap to i32 for comparison)
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(field_len));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32GeU);
+        func.instruction(&Instruction::BrIf(1)); // break outer
+
+        // Load byte from field (wrap to i32 for address calculation)
+        func.instruction(&Instruction::LocalGet(field_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load8U(MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(byte1));
+
+        // Load byte from expected (wrap to i32 for address calculation)
+        func.instruction(&Instruction::LocalGet(expected_ptr));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I32Load8U(MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: 0,
+        }));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(byte2));
+
+        // Compare bytes (wrap to i32 for comparison)
+        func.instruction(&Instruction::LocalGet(byte1));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::LocalGet(byte2));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Ne);
+        func.instruction(&Instruction::If(BlockType::Empty));
+        // Mismatch - set result to 0 and break (extend to i64)
+        func.instruction(&Instruction::I32Const(0));
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(match_result));
+        func.instruction(&Instruction::Br(2)); // break outer
+        func.instruction(&Instruction::End);
+
+        // Increment cmp_idx (wrap to i32, add, extend back to i64)
+        func.instruction(&Instruction::LocalGet(cmp_idx));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::I32Const(1));
+        func.instruction(&Instruction::I32Add);
+        func.instruction(&Instruction::I64ExtendI32U);
+        func.instruction(&Instruction::LocalSet(cmp_idx));
+        func.instruction(&Instruction::Br(0)); // continue loop
+
+        func.instruction(&Instruction::End); // end loop
+        func.instruction(&Instruction::End); // end block
+
+        // Return match_result (wrap to i32 for condition result)
+        func.instruction(&Instruction::LocalGet(match_result));
+        func.instruction(&Instruction::I32WrapI64);
+
+        func.instruction(&Instruction::End); // end length check if-else
+
+        Ok(())
     }
 
     /// Compile lexicographic string comparison for ORDER BY sorting

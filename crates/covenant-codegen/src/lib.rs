@@ -32,6 +32,9 @@ pub enum CodegenError {
     #[error("undefined function: {name}")]
     UndefinedFunction { name: String },
 
+    #[error("undefined variable: {name}")]
+    UndefinedVariable { name: String },
+
     #[error("serialization failed: {0}")]
     SerializationFailed(String),
 }

@@ -1,0 +1,154 @@
+// Example 70: Parameterized Queries
+//
+// Demonstrates passing runtime string parameters to query functions.
+// This enables using Covenant as a queryable document database.
+
+// -----------------------------------------------------------------------------
+// Data Snippets
+// -----------------------------------------------------------------------------
+
+snippet id="docs.hello" kind="data"
+  note "Hello World Documentation"
+
+  content
+    """
+    Hello World Documentation
+    This is a simple example that demonstrates basic functionality.
+    Keywords: hello, world, example, basic
+    """
+  end
+end
+
+snippet id="docs.goodbye" kind="data"
+  note "Goodbye World Documentation"
+
+  content
+    """
+    Goodbye World Documentation
+    This document explains how to gracefully exit and cleanup.
+    Keywords: goodbye, exit, cleanup, shutdown
+    """
+  end
+end
+
+snippet id="docs.advanced" kind="data"
+  note "Advanced Topics"
+
+  content
+    """
+    Advanced Topics Guide
+    This covers advanced patterns and optimization techniques.
+    Keywords: advanced, patterns, optimization, performance
+    """
+  end
+end
+
+snippet id="docs.tutorial" kind="data"
+  note "Getting Started Tutorial"
+
+  content
+    """
+    Getting Started Tutorial
+    A step-by-step guide to help you get started quickly.
+    Keywords: tutorial, getting started, beginner, guide
+    """
+  end
+end
+
+// -----------------------------------------------------------------------------
+// Query Functions with Parameters
+// -----------------------------------------------------------------------------
+
+// Search content by a runtime string parameter
+snippet id="query.search_content" kind="fn"
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="search_content"
+      param name="term" type="String"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        contains field="content" var="term"
+      end
+      as="results"
+    end
+
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end
+
+// Find a document by exact ID match
+snippet id="query.find_by_id" kind="fn"
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_by_id"
+      param name="doc_id" type="String"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="id" var="doc_id"
+      end
+      limit=1
+      as="result"
+    end
+
+    step id="s2" kind="return"
+      from="result"
+      as="_"
+    end
+  end
+end
+
+// Find documents by kind
+snippet id="query.find_by_kind" kind="fn"
+  effects
+    effect meta
+  end
+
+  signature
+    fn name="find_by_kind"
+      param name="kind_name" type="String"
+      returns type="Any"
+    end
+  end
+
+  body
+    step id="s1" kind="query"
+      target="project"
+      select all
+      from="snippets"
+      where
+        equals field="kind" var="kind_name"
+      end
+      as="results"
+    end
+
+    step id="s2" kind="return"
+      from="results"
+      as="_"
+    end
+  end
+end

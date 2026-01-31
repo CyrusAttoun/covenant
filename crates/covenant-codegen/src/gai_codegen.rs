@@ -313,10 +313,12 @@ pub struct GaiFunctionIndices {
     pub content_contains: u32,
     /// _gai_get_rel_type_name(type_idx: i32) -> i64  (fat ptr)
     pub get_rel_type_name: u32,
+    /// cov_alloc(size: i32) -> i32  (bump allocator for runtime string parameters)
+    pub alloc: u32,
 }
 
 /// Number of GAI functions
-pub const GAI_FUNCTION_COUNT: u32 = 11;
+pub const GAI_FUNCTION_COUNT: u32 = 12;
 
 /// Generate GAI function type signatures.
 /// Returns Vec of (params, results) for the type section.
@@ -344,6 +346,8 @@ pub fn gai_function_types() -> Vec<(Vec<ValType>, Vec<ValType>)> {
         (vec![ValType::I32, ValType::I32, ValType::I32], vec![ValType::I32]),
         // 10: _gai_get_rel_type_name(type_idx: i32) -> i64
         (vec![ValType::I32], vec![ValType::I64]),
+        // 11: cov_alloc(size: i32) -> i32 (bump allocator)
+        (vec![ValType::I32], vec![ValType::I32]),
     ]
 }
 
@@ -822,6 +826,31 @@ pub fn gen_gai_get_rel_type_name(layout: &GraphLayout) -> Function {
     gen_table_lookup_fat_ptr(layout, layout.rel_type_table_offset)
 }
 
+/// Generate cov_alloc(size: i32) -> i32
+/// Bump allocator that returns the current heap pointer and advances it by size.
+/// Uses global 0 as the heap pointer (convention established in snippet_wasm.rs).
+pub fn gen_gai_alloc() -> Function {
+    // Param: local 0 = size
+    let mut func = Function::new(vec![
+        (1, ValType::I32), // local 1: result (original heap pointer)
+    ]);
+
+    // result = global[0] (current heap pointer)
+    func.instruction(&Instruction::GlobalGet(0));
+    func.instruction(&Instruction::LocalSet(1));
+
+    // global[0] = global[0] + size
+    func.instruction(&Instruction::GlobalGet(0));
+    func.instruction(&Instruction::LocalGet(0)); // size param
+    func.instruction(&Instruction::I32Add);
+    func.instruction(&Instruction::GlobalSet(0));
+
+    // return result
+    func.instruction(&Instruction::LocalGet(1));
+    func.instruction(&Instruction::End);
+    func
+}
+
 /// Generate all GAI function bodies in order
 pub fn generate_gai_functions(layout: &GraphLayout) -> Vec<Function> {
     vec![
@@ -836,6 +865,7 @@ pub fn generate_gai_functions(layout: &GraphLayout) -> Vec<Function> {
         gen_gai_find_by_id(layout),
         gen_gai_content_contains(layout),
         gen_gai_get_rel_type_name(layout),
+        gen_gai_alloc(),
     ]
 }
 
