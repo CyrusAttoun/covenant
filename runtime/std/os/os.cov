@@ -1,0 +1,92 @@
+// std.os - OS and Environment
+//
+// Functions for OS information and environment variable access.
+// env_get and env_set require the `os` effect.
+// platform and arch are pure functions (no effects).
+//
+// Platform backends:
+// - Deno: Deno.env, Deno.build
+// - Node.js: process.env, process.platform, process.arch
+// - Browser: N/A (limited or polyfilled)
+// - WASI: wasi:cli/environment
+
+// ============================================================
+// Environment Variable Functions (require effect os)
+// ============================================================
+
+snippet id="os.env_get" kind="extern-abstract"
+
+effects
+  effect os
+end
+
+signature
+  fn name="env_get"
+    param name="name" type="String"
+    returns union
+      type="String" optional
+    end
+  end
+end
+
+metadata
+  description="Get the value of an environment variable, returns none if not set"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="os.env_set" kind="extern-abstract"
+
+effects
+  effect os
+end
+
+signature
+  fn name="env_set"
+    param name="name" type="String"
+    param name="value" type="String"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Set the value of an environment variable"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Platform Information Functions (pure, no effects)
+// ============================================================
+
+snippet id="os.platform" kind="extern-abstract"
+
+signature
+  fn name="platform"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Get the operating system platform identifier (e.g., linux, darwin, windows)"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="os.arch" kind="extern-abstract"
+
+signature
+  fn name="arch"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Get the CPU architecture identifier (e.g., x86_64, aarch64)"
+  cost_hint=cheap
+end
+
+end

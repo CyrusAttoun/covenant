@@ -1,5 +1,7 @@
 // JSON Module Test Suite
 // Comprehensive unit tests for JSON parsing, serialization, and manipulation.
+// Tests cover: json.parse, json.stringify, json.format, json.is_valid, type guards, field access
+// Test naming: T-JSON-XXX | Requirements: R-JSON-XXX
 
 // ============================================================
 // Requirements Definition
@@ -8,7 +10,7 @@
 snippet id="json_requirements" kind="data"
 
 requires
-  (* Parsing *)
+  // Parsing
   req id="R-JSON-001"
     text "parse() correctly parses valid JSON primitives (null, bool, number, string)"
     priority critical
@@ -34,7 +36,7 @@ requires
     priority high
   end
 
-  (* Serialization *)
+  // Serialization
   req id="R-JSON-006"
     text "stringify() serializes JSON primitives correctly"
     priority critical
@@ -50,7 +52,7 @@ requires
     priority high
   end
 
-  (* Validation *)
+  // Validation
   req id="R-JSON-009"
     text "is_valid() returns true for valid JSON strings"
     priority high
@@ -61,13 +63,13 @@ requires
     priority high
   end
 
-  (* Type Guards *)
+  // Type Guards
   req id="R-JSON-011"
     text "Type guard functions (is_object, is_array, etc.) correctly identify types"
     priority high
   end
 
-  (* Field Access *)
+  // Field Access
   req id="R-JSON-012"
     text "get_field() extracts fields from JSON objects"
     priority high
@@ -78,13 +80,13 @@ requires
     priority high
   end
 
-  (* Extraction *)
+  // Extraction
   req id="R-JSON-014"
     text "as_string(), as_number(), as_bool() extract typed values correctly"
     priority high
   end
 
-  (* Edge Cases *)
+  // Edge Cases
   req id="R-JSON-015"
     text "parse() handles escaped characters correctly"
     priority high
@@ -104,19 +106,18 @@ end
 end
 
 // ============================================================
-// Parse Tests - Primitives
+// Test Suite
 // ============================================================
 
-snippet id="test.json.parse_null" kind="test"
+snippet id="json_tests" kind="test"
 
-covers
-  req="R-JSON-001"
-end
+tests
+  // ============================================================
+  // Parse Tests - Primitives
+  // ============================================================
 
-test id="T-JSON-001" kind="unit"
-  text "parse() correctly parses null"
-
-  body
+  test id="T-JSON-001" kind="unit" covers="R-JSON-001"
+    // parse() correctly parses null
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="null"
@@ -130,26 +131,15 @@ test id="T-JSON-001" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_null"
       arg name="message" lit="Parsed value should be null"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.parse_bool" kind="test"
-
-covers
-  req="R-JSON-001"
-end
-
-test id="T-JSON-002" kind="unit"
-  text "parse() correctly parses booleans"
-
-  body
+  test id="T-JSON-002" kind="unit" covers="R-JSON-001"
+    // parse() correctly parses booleans
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="true"
@@ -163,27 +153,16 @@ test id="T-JSON-002" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="bool_val"
       arg name="expected" lit=true
       arg name="message" lit="Parsed boolean should be true"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.parse_number" kind="test"
-
-covers
-  req="R-JSON-001"
-end
-
-test id="T-JSON-003" kind="unit"
-  text "parse() correctly parses numbers"
-
-  body
+  test id="T-JSON-003" kind="unit" covers="R-JSON-001"
+    // parse() correctly parses numbers
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="42.5"
@@ -197,27 +176,16 @@ test id="T-JSON-003" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="num_val"
       arg name="expected" lit=42.5
       arg name="message" lit="Parsed number should be 42.5"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.parse_string" kind="test"
-
-covers
-  req="R-JSON-001"
-end
-
-test id="T-JSON-004" kind="unit"
-  text "parse() correctly parses strings"
-
-  body
+  test id="T-JSON-004" kind="unit" covers="R-JSON-001"
+    // parse() correctly parses strings
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="\"hello world\""
@@ -231,31 +199,20 @@ test id="T-JSON-004" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="str_val"
       arg name="expected" lit="hello world"
       arg name="message" lit="Parsed string should be 'hello world'"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Parse Tests - Arrays and Objects
+  // ============================================================
 
-// ============================================================
-// Parse Tests - Arrays and Objects
-// ============================================================
-
-snippet id="test.json.parse_array" kind="test"
-
-covers
-  req="R-JSON-002"
-end
-
-test id="T-JSON-005" kind="unit"
-  text "parse() correctly parses JSON arrays"
-
-  body
+  test id="T-JSON-005" kind="unit" covers="R-JSON-002"
+    // parse() correctly parses JSON arrays
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="[1, 2, 3]"
@@ -269,26 +226,15 @@ test id="T-JSON-005" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_arr"
       arg name="message" lit="Parsed value should be an array"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.parse_object" kind="test"
-
-covers
-  req="R-JSON-003"
-end
-
-test id="T-JSON-006" kind="unit"
-  text "parse() correctly parses JSON objects"
-
-  body
+  test id="T-JSON-006" kind="unit" covers="R-JSON-003"
+    // parse() correctly parses JSON objects
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="{\"name\":\"Alice\",\"age\":30}"
@@ -302,13 +248,13 @@ test id="T-JSON-006" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_obj"
       arg name="message" lit="Parsed value should be an object"
       as="_"
     end
 
-    (* Test field extraction *)
+    // Test field extraction
     step id="s4" kind="call"
       fn="json.get_field"
       arg name="obj" from="result"
@@ -323,70 +269,48 @@ test id="T-JSON-006" kind="unit"
     end
 
     step id="s6" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="name"
       arg name="expected" lit="Alice"
       arg name="message" lit="Name field should be 'Alice'"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Parse Tests - Error Handling
+  // ============================================================
 
-// ============================================================
-// Parse Tests - Error Handling
-// ============================================================
-
-snippet id="test.json.parse_invalid" kind="test"
-
-covers
-  req="R-JSON-004"
-end
-
-test id="T-JSON-007" kind="unit"
-  text "parse() returns JsonError for invalid JSON"
-
-  body
+  test id="T-JSON-007" kind="unit" covers="R-JSON-004"
+    // parse() returns JsonError for invalid JSON
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="{invalid json}"
       as="result"
     end
 
-    (* Check if result is error - implementation depends on error handling pattern *)
+    // Check if result is error - implementation depends on error handling pattern
     step id="s2" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" lit=true
       arg name="message" lit="Should handle invalid JSON (test placeholder)"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Parse Tests - Nested Structures
+  // ============================================================
 
-// ============================================================
-// Parse Tests - Nested Structures
-// ============================================================
-
-snippet id="test.json.parse_nested" kind="test"
-
-covers
-  req="R-JSON-005"
-end
-
-test id="T-JSON-008" kind="unit"
-  text "parse() handles nested structures"
-
-  body
+  test id="T-JSON-008" kind="unit" covers="R-JSON-005"
+    // parse() handles nested structures
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="{\"user\":{\"name\":\"Bob\",\"tags\":[\"admin\",\"user\"]}}"
       as="result"
     end
 
-    (* Get user object *)
+    // Get user object
     step id="s2" kind="call"
       fn="json.get_field"
       arg name="obj" from="result"
@@ -394,7 +318,7 @@ test id="T-JSON-008" kind="unit"
       as="user_obj"
     end
 
-    (* Get name from user *)
+    // Get name from user
     step id="s3" kind="call"
       fn="json.get_field"
       arg name="obj" from="user_obj"
@@ -409,34 +333,24 @@ test id="T-JSON-008" kind="unit"
     end
 
     step id="s5" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="name"
       arg name="expected" lit="Bob"
       arg name="message" lit="Nested name field should be 'Bob'"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Stringify Tests
+  // ============================================================
 
-// ============================================================
-// Stringify Tests
-// ============================================================
-
-snippet id="test.json.stringify_null" kind="test"
-
-covers
-  req="R-JSON-006"
-end
-
-test id="T-JSON-009" kind="unit"
-  text "stringify() serializes null correctly"
-
-  body
-    (* Create null value *)
-    step id="s1" kind="construct"
-      variant type="Json::Null"
+  test id="T-JSON-009" kind="unit" covers="R-JSON-006"
+    // stringify() serializes null correctly
+    // Parse null value first
+    step id="s1" kind="call"
+      fn="json.parse"
+      arg name="input" lit="null"
       as="null_val"
     end
 
@@ -447,32 +361,20 @@ test id="T-JSON-009" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="result"
       arg name="expected" lit="null"
       arg name="message" lit="Null should serialize to 'null'"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.stringify_bool" kind="test"
-
-covers
-  req="R-JSON-006"
-end
-
-test id="T-JSON-010" kind="unit"
-  text "stringify() serializes booleans correctly"
-
-  body
-    (* Create bool value *)
-    step id="s1" kind="construct"
-      variant type="Json::Bool"
-        field name="value" lit=true
-      end
+  test id="T-JSON-010" kind="unit" covers="R-JSON-006"
+    // stringify() serializes booleans correctly
+    // Parse bool value first
+    step id="s1" kind="call"
+      fn="json.parse"
+      arg name="input" lit="true"
       as="bool_val"
     end
 
@@ -483,32 +385,21 @@ test id="T-JSON-010" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="result"
       arg name="expected" lit="true"
       arg name="message" lit="True should serialize to 'true'"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Format Tests
+  // ============================================================
 
-// ============================================================
-// Format Tests
-// ============================================================
-
-snippet id="test.json.format_pretty" kind="test"
-
-covers
-  req="R-JSON-008"
-end
-
-test id="T-JSON-011" kind="unit"
-  text "format() produces pretty-printed JSON"
-
-  body
-    (* Parse simple object *)
+  test id="T-JSON-011" kind="unit" covers="R-JSON-008"
+    // format() produces pretty-printed JSON
+    // Parse simple object
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="{\"a\":1,\"b\":2}"
@@ -522,7 +413,7 @@ test id="T-JSON-011" kind="unit"
       as="formatted"
     end
 
-    (* Check it contains newlines (indicating formatting) *)
+    // Check it contains newlines (indicating formatting)
     step id="s3" kind="call"
       fn="text.contains"
       arg name="haystack" from="formatted"
@@ -531,30 +422,19 @@ test id="T-JSON-011" kind="unit"
     end
 
     step id="s4" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="has_newlines"
       arg name="message" lit="Formatted JSON should contain newlines"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Validation Tests
+  // ============================================================
 
-// ============================================================
-// Validation Tests
-// ============================================================
-
-snippet id="test.json.is_valid_true" kind="test"
-
-covers
-  req="R-JSON-009"
-end
-
-test id="T-JSON-012" kind="unit"
-  text "is_valid() returns true for valid JSON"
-
-  body
+  test id="T-JSON-012" kind="unit" covers="R-JSON-009"
+    // is_valid() returns true for valid JSON
     step id="s1" kind="call"
       fn="json.is_valid"
       arg name="input" lit="{\"valid\":true}"
@@ -562,58 +442,42 @@ test id="T-JSON-012" kind="unit"
     end
 
     step id="s2" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="result"
       arg name="message" lit="Valid JSON should return true"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.is_valid_false" kind="test"
-
-covers
-  req="R-JSON-010"
-end
-
-test id="T-JSON-013" kind="unit"
-  text "is_valid() returns false for invalid JSON"
-
-  body
+  test id="T-JSON-013" kind="unit" covers="R-JSON-010"
+    // is_valid() returns false for invalid JSON
     step id="s1" kind="call"
       fn="json.is_valid"
       arg name="input" lit="{invalid"
       as="result"
     end
 
-    step id="s2" kind="call"
-      fn="test.assert_false"
-      arg name="condition" from="result"
+    step id="s2" kind="compute"
+      op=not
+      input var="result"
+      as="is_false"
+    end
+
+    step id="s3" kind="call"
+      fn="testing_assert_true"
+      arg name="condition" from="is_false"
       arg name="message" lit="Invalid JSON should return false"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Type Guard Tests
+  // ============================================================
 
-// ============================================================
-// Type Guard Tests
-// ============================================================
-
-snippet id="test.json.type_guards" kind="test"
-
-covers
-  req="R-JSON-011"
-end
-
-test id="T-JSON-014" kind="unit"
-  text "Type guards correctly identify JSON types"
-
-  body
-    (* Test is_object *)
+  test id="T-JSON-014" kind="unit" covers="R-JSON-011"
+    // Type guards correctly identify JSON types
+    // Test is_object
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="{}"
@@ -625,13 +489,13 @@ test id="T-JSON-014" kind="unit"
       as="is_obj"
     end
     step id="s3" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_obj"
       arg name="message" lit="Empty object should pass is_object check"
       as="_"
     end
 
-    (* Test is_array *)
+    // Test is_array
     step id="s4" kind="call"
       fn="json.parse"
       arg name="input" lit="[]"
@@ -643,13 +507,13 @@ test id="T-JSON-014" kind="unit"
       as="is_arr"
     end
     step id="s6" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_arr"
       arg name="message" lit="Empty array should pass is_array check"
       as="_"
     end
 
-    (* Test is_string *)
+    // Test is_string
     step id="s7" kind="call"
       fn="json.parse"
       arg name="input" lit="\"test\""
@@ -661,30 +525,19 @@ test id="T-JSON-014" kind="unit"
       as="is_str"
     end
     step id="s9" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_str"
       arg name="message" lit="String value should pass is_string check"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Field and Index Access Tests
+  // ============================================================
 
-// ============================================================
-// Field and Index Access Tests
-// ============================================================
-
-snippet id="test.json.get_field" kind="test"
-
-covers
-  req="R-JSON-012"
-end
-
-test id="T-JSON-015" kind="unit"
-  text "get_field() extracts fields from objects"
-
-  body
+  test id="T-JSON-015" kind="unit" covers="R-JSON-012"
+    // get_field() extracts fields from objects
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="{\"key\":\"value\"}"
@@ -705,27 +558,16 @@ test id="T-JSON-015" kind="unit"
     end
 
     step id="s4" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="str_val"
       arg name="expected" lit="value"
       arg name="message" lit="Field value should be 'value'"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.get_index" kind="test"
-
-covers
-  req="R-JSON-013"
-end
-
-test id="T-JSON-016" kind="unit"
-  text "get_index() extracts elements from arrays"
-
-  body
+  test id="T-JSON-016" kind="unit" covers="R-JSON-013"
+    // get_index() extracts elements from arrays
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="[10, 20, 30]"
@@ -746,32 +588,21 @@ test id="T-JSON-016" kind="unit"
     end
 
     step id="s4" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="num_val"
       arg name="expected" lit=20.0
       arg name="message" lit="Second element should be 20"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Extraction Helper Tests
+  // ============================================================
 
-// ============================================================
-// Extraction Helper Tests
-// ============================================================
-
-snippet id="test.json.extraction_helpers" kind="test"
-
-covers
-  req="R-JSON-014"
-end
-
-test id="T-JSON-017" kind="unit"
-  text "Extraction helpers extract typed values"
-
-  body
-    (* Test as_string *)
+  test id="T-JSON-017" kind="unit" covers="R-JSON-014"
+    // Extraction helpers extract typed values
+    // Test as_string
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="\"text\""
@@ -783,14 +614,14 @@ test id="T-JSON-017" kind="unit"
       as="str_val"
     end
     step id="s3" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="str_val"
       arg name="expected" lit="text"
       arg name="message" lit="as_string should extract string value"
       as="_"
     end
 
-    (* Test as_number *)
+    // Test as_number
     step id="s4" kind="call"
       fn="json.parse"
       arg name="input" lit="123.45"
@@ -802,31 +633,20 @@ test id="T-JSON-017" kind="unit"
       as="num_val"
     end
     step id="s6" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="num_val"
       arg name="expected" lit=123.45
       arg name="message" lit="as_number should extract numeric value"
       as="_"
     end
   end
-end
 
-end
+  // ============================================================
+  // Edge Case Tests
+  // ============================================================
 
-// ============================================================
-// Edge Case Tests
-// ============================================================
-
-snippet id="test.json.escaped_chars" kind="test"
-
-covers
-  req="R-JSON-015"
-end
-
-test id="T-JSON-018" kind="unit"
-  text "parse() handles escaped characters"
-
-  body
+  test id="T-JSON-018" kind="unit" covers="R-JSON-015"
+    // parse() handles escaped characters
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="\"line1\\nline2\\ttab\""
@@ -839,7 +659,7 @@ test id="T-JSON-018" kind="unit"
       as="str_val"
     end
 
-    (* Check it contains the escape sequences *)
+    // Check it contains the escape sequences
     step id="s3" kind="call"
       fn="text.contains"
       arg name="haystack" from="str_val"
@@ -848,27 +668,16 @@ test id="T-JSON-018" kind="unit"
     end
 
     step id="s4" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="has_newline"
       arg name="message" lit="Parsed string should contain newline character"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.empty_structures" kind="test"
-
-covers
-  req="R-JSON-016"
-end
-
-test id="T-JSON-019" kind="unit"
-  text "parse() handles empty arrays and objects"
-
-  body
-    (* Test empty array *)
+  test id="T-JSON-019" kind="unit" covers="R-JSON-016"
+    // parse() handles empty arrays and objects
+    // Test empty array
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="[]"
@@ -882,13 +691,13 @@ test id="T-JSON-019" kind="unit"
     end
 
     step id="s3" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_arr"
       arg name="message" lit="Empty array should parse correctly"
       as="_"
     end
 
-    (* Test empty object *)
+    // Test empty object
     step id="s4" kind="call"
       fn="json.parse"
       arg name="input" lit="{}"
@@ -902,26 +711,15 @@ test id="T-JSON-019" kind="unit"
     end
 
     step id="s6" kind="call"
-      fn="test.assert_true"
+      fn="testing_assert_true"
       arg name="condition" from="is_obj"
       arg name="message" lit="Empty object should parse correctly"
       as="_"
     end
   end
-end
 
-end
-
-snippet id="test.json.round_trip" kind="test"
-
-covers
-  req="R-JSON-017"
-end
-
-test id="T-JSON-020" kind="unit"
-  text "Round-trip: stringify(parse(x)) preserves data"
-
-  body
+  test id="T-JSON-020" kind="unit" covers="R-JSON-017"
+    // Round-trip: stringify(parse(x)) preserves data
     step id="s1" kind="call"
       fn="json.parse"
       arg name="input" lit="{\"name\":\"Alice\",\"age\":30,\"active\":true}"
@@ -940,7 +738,7 @@ test id="T-JSON-020" kind="unit"
       as="reparsed"
     end
 
-    (* Verify we can still extract fields correctly *)
+    // Verify we can still extract fields correctly
     step id="s4" kind="call"
       fn="json.get_field"
       arg name="obj" from="reparsed"
@@ -955,13 +753,14 @@ test id="T-JSON-020" kind="unit"
     end
 
     step id="s6" kind="call"
-      fn="test.assert_equals"
+      fn="testing_assert_equals"
       arg name="actual" from="name"
       arg name="expected" lit="Alice"
       arg name="message" lit="Round-trip should preserve data"
       as="_"
     end
   end
+
 end
 
 end

@@ -1284,6 +1284,38 @@ impl<'a> SnippetWasmCompiler<'a> {
                 }
                 // If discarded (as="_"), don't push anything onto the stack
             }
+            StepKind::Parallel(parallel) => {
+                // TODO: Parallel execution requires runtime support.
+                // For now, we compile branches sequentially and collect results.
+                // A proper implementation would use host functions for concurrent execution.
+                for branch in &parallel.branches {
+                    for nested_step in &branch.steps {
+                        self.compile_step(nested_step, func)?;
+                    }
+                }
+                // Generate a placeholder value for the results
+                if step.output_binding != "_" {
+                    func.instruction(&Instruction::I64Const(0));
+                    let local = self.allocate_local(&step.output_binding);
+                    func.instruction(&Instruction::LocalSet(local));
+                }
+            }
+            StepKind::Race(race) => {
+                // TODO: Race execution requires runtime support.
+                // For now, we compile the first branch as the "winner".
+                // A proper implementation would use host functions for race semantics.
+                if let Some(first_branch) = race.branches.first() {
+                    for nested_step in &first_branch.steps {
+                        self.compile_step(nested_step, func)?;
+                    }
+                }
+                // Generate a placeholder value for the result
+                if step.output_binding != "_" {
+                    func.instruction(&Instruction::I64Const(0));
+                    let local = self.allocate_local(&step.output_binding);
+                    func.instruction(&Instruction::LocalSet(local));
+                }
+            }
         }
         Ok(())
     }

@@ -395,6 +395,8 @@ fn step_kind_str(kind: &StepKind) -> String {
         StepKind::Transaction(_) => "transaction".to_string(),
         StepKind::Traverse(_) => "traverse".to_string(),
         StepKind::Construct(_) => "construct".to_string(),
+        StepKind::Parallel(_) => "parallel".to_string(),
+        StepKind::Race(_) => "race".to_string(),
     }
 }
 

@@ -1339,7 +1339,6 @@ end
     // === Concurrent Steps ===
 
     #[test]
-    #[ignore = "Built-in parallel step kind not yet implemented in parser"]
     fn test_parse_parallel_step() {
         let source = r#"
 snippet id="app.fetch_all" kind="fn"
@@ -1381,7 +1380,6 @@ end
     }
 
     #[test]
-    #[ignore = "Built-in race step kind not yet implemented in parser"]
     fn test_parse_race_step() {
         let source = r#"
 snippet id="cache.get_with_fallback" kind="fn"

@@ -132,6 +132,10 @@ fn collect_consumed_bindings(kind: &StepKind, consumed: &mut HashSet<String>) {
                 collect_from_input_source(&field.value, consumed);
             }
         }
+        StepKind::Parallel(_) | StepKind::Race(_) => {
+            // Parallel and Race steps don't directly consume bindings;
+            // nested steps within branches are handled separately
+        }
     }
 }
 

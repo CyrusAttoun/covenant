@@ -1,0 +1,110 @@
+// std.process - Process Execution
+//
+// Functions for subprocess execution and management.
+// All operations require the `process` effect.
+//
+// Platform backends:
+// - Deno: Deno.Command
+// - Node.js: child_process
+// - Browser: N/A
+// - WASI: wasi:cli/run (limited)
+
+// ============================================================
+// Process Functions
+// ============================================================
+
+snippet id="process.exec" kind="extern-abstract"
+
+effects
+  effect process
+end
+
+signature
+  fn name="exec"
+    param name="command" type="String"
+    param name="args" type="List" of="String" optional
+    param name="cwd" type="String" optional
+    param name="env" type="Map" of="String" to="String" optional
+    param name="timeout" type="Int" optional
+    returns union
+      type="ProcessResult"
+      type="ProcessError"
+    end
+  end
+end
+
+metadata
+  description="Execute a command synchronously and capture stdout, stderr, and exit code"
+  cost_hint=expensive
+end
+
+end
+
+snippet id="process.spawn" kind="extern-abstract"
+
+effects
+  effect process
+end
+
+signature
+  fn name="spawn"
+    param name="command" type="String"
+    param name="args" type="List" of="String" optional
+    param name="cwd" type="String" optional
+    param name="env" type="Map" of="String" to="String" optional
+    returns union
+      type="ProcessHandle"
+      type="ProcessError"
+    end
+  end
+end
+
+metadata
+  description="Spawn a background process and return a handle for management"
+  cost_hint=expensive
+end
+
+end
+
+snippet id="process.kill" kind="extern-abstract"
+
+effects
+  effect process
+end
+
+signature
+  fn name="kill"
+    param name="handle" type="ProcessHandle"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Terminate a spawned process"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="process.wait" kind="extern-abstract"
+
+effects
+  effect process
+end
+
+signature
+  fn name="wait"
+    param name="handle" type="ProcessHandle"
+    returns union
+      type="ProcessResult"
+      type="ProcessError"
+    end
+  end
+end
+
+metadata
+  description="Wait for a spawned process to complete and return its result"
+  cost_hint=expensive
+end
+
+end

@@ -2489,6 +2489,8 @@ impl<'a> Parser<'a> {
             "transaction" => StepKind::Transaction(self.parse_transaction_step()?),
             "traverse" => StepKind::Traverse(self.parse_traverse_step()?),
             "construct" => StepKind::Construct(self.parse_construct_step()?),
+            "parallel" => StepKind::Parallel(self.parse_parallel_step()?),
+            "race" => StepKind::Race(self.parse_race_step()?),
             _ => {
                 return Err(ParseError::InvalidStepKind {
                     kind: step_kind_str,
@@ -3795,6 +3797,103 @@ impl<'a> Parser<'a> {
             relation_type,
             depth,
             direction,
+            span: start.merge(end),
+        })
+    }
+
+    fn parse_parallel_step(&mut self) -> Result<ParallelStep, ParseError> {
+        let start = self.span();
+
+        // Optional on_error="fail_fast" | "collect_all" | "ignore_errors"
+        let on_error = if self.at(TokenKind::Ident) && self.peek_text() == "on_error" {
+            self.advance();
+            self.consume(TokenKind::Eq)?;
+            Some(self.consume_string_literal()?)
+        } else {
+            None
+        };
+
+        // Optional timeout="5s"
+        let timeout = if self.at(TokenKind::Ident) && self.peek_text() == "timeout" {
+            self.advance();
+            self.consume(TokenKind::Eq)?;
+            Some(self.consume_string_literal()?)
+        } else {
+            None
+        };
+
+        // Parse branches
+        let mut branches = Vec::new();
+        while self.at(TokenKind::Branch) {
+            branches.push(self.parse_branch()?);
+        }
+
+        let end = self.span();
+
+        Ok(ParallelStep {
+            branches,
+            on_error,
+            timeout,
+            span: start.merge(end),
+        })
+    }
+
+    fn parse_race_step(&mut self) -> Result<RaceStep, ParseError> {
+        let start = self.span();
+
+        // Optional timeout="5s"
+        let timeout = if self.at(TokenKind::Ident) && self.peek_text() == "timeout" {
+            self.advance();
+            self.consume(TokenKind::Eq)?;
+            Some(self.consume_string_literal()?)
+        } else {
+            None
+        };
+
+        // Optional on_timeout="cancel" | "return_partial"
+        let on_timeout = if self.at(TokenKind::Ident) && self.peek_text() == "on_timeout" {
+            self.advance();
+            self.consume(TokenKind::Eq)?;
+            Some(self.consume_string_literal()?)
+        } else {
+            None
+        };
+
+        // Parse branches
+        let mut branches = Vec::new();
+        while self.at(TokenKind::Branch) {
+            branches.push(self.parse_branch()?);
+        }
+
+        let end = self.span();
+
+        Ok(RaceStep {
+            branches,
+            on_timeout,
+            timeout,
+            span: start.merge(end),
+        })
+    }
+
+    fn parse_branch(&mut self) -> Result<Branch, ParseError> {
+        let start = self.span();
+        self.consume(TokenKind::Branch)?;
+
+        // branch id="b1"
+        let id = self.parse_attribute("id")?;
+
+        // Parse nested steps
+        let mut steps = Vec::new();
+        while self.at(TokenKind::Step) {
+            steps.push(self.parse_step()?);
+        }
+
+        self.consume(TokenKind::End)?;
+        let end = self.span();
+
+        Ok(Branch {
+            id,
+            steps,
             span: start.merge(end),
         })
     }

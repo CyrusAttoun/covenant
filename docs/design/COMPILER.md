@@ -1,5 +1,5 @@
 # Covenant Compiler Specification
-
+# hell
 Detailed specification of the Covenant compilation pipeline, from IR source to WASM binary.
 
 ---
@@ -11,7 +11,7 @@ Detailed specification of the Covenant compilation pipeline, from IR source to W
 3. [Phase 2: Symbol Graph Builder](#phase-2-symbol-graph-builder)
 4. [Phase 3: Effect Checker](#phase-3-effect-checker)
 5. [Phase 4: Type Checker](#phase-4-type-checker)
-6. [Phase 5: Requirement Validator](#phase-5-requirement-validator)
+6. [Phase 5: Requirement Vali****dator](#phase-5-requirement-validator)
 7. [Phase 6: IR Optimizer](#phase-6-ir-optimizer)
 8. [Phase 7: WASM Emitter](#phase-7-wasm-emitter)
 9. [Error Handling](#error-handling)
@@ -37,7 +37,7 @@ Detailed specification of the Covenant compilation pipeline, from IR source to W
 │         ↓                                                   │
 │  ┌──────────────────────────────────────────────┐          │
 │  │ Phase 2: Symbol Graph Builder                │          │
-│  │   Input:  Raw AST                            │          │
+│  │   Input:  Raw AST            
 │  │   Output: Symbol Table + Forward Refs        │          │
 │  │   Errors: E-SYMBOL-xxx                       │          │
 │  │   Validates: I1, I3, I4, I5                   │          │

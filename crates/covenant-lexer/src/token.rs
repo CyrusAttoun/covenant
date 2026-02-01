@@ -97,6 +97,8 @@ pub enum TokenKind {
     Returns,
     #[token("step")]
     Step,
+    #[token("branch")]
+    Branch,
     #[token("op")]
     Op,
     #[token("input")]
@@ -342,6 +344,7 @@ impl TokenKind {
                 | TokenKind::Param
                 | TokenKind::Returns
                 | TokenKind::Step
+                | TokenKind::Branch
                 | TokenKind::Op
                 | TokenKind::Input
                 | TokenKind::Var
@@ -437,6 +440,7 @@ impl TokenKind {
             TokenKind::Param => "'param'",
             TokenKind::Returns => "'returns'",
             TokenKind::Step => "'step'",
+            TokenKind::Branch => "'branch'",
             TokenKind::Op => "'op'",
             TokenKind::Input => "'input'",
             TokenKind::Var => "'var'",

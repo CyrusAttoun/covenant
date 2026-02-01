@@ -218,6 +218,24 @@ impl SnippetChecker {
             StepKind::Transaction(_) => ResolvedType::Unknown,
             StepKind::Traverse(_) => ResolvedType::Unknown,
             StepKind::Construct(construct) => self.infer_construct_step(construct),
+            StepKind::Parallel(parallel) => {
+                // For parallel, check all branches and return a collection of their results
+                for branch in &parallel.branches {
+                    for step in &branch.steps {
+                        self.check_step(step);
+                    }
+                }
+                ResolvedType::Unknown // TODO: infer tuple/struct of branch results
+            }
+            StepKind::Race(race) => {
+                // For race, the result is whichever branch finishes first
+                for branch in &race.branches {
+                    for step in &branch.steps {
+                        self.check_step(step);
+                    }
+                }
+                ResolvedType::Unknown // TODO: infer union of branch result types
+            }
         }
     }
 

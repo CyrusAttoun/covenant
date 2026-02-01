@@ -329,6 +329,22 @@ impl SymbolExtractor {
             }
             // Compute and Bind don't introduce new calls or type refs
             StepKind::Compute(_) | StepKind::Bind(_) => {}
+            StepKind::Parallel(parallel) => {
+                // Recurse into branches
+                for branch in &parallel.branches {
+                    let (branch_calls, branch_refs) = self.extract_steps_refs(&branch.steps);
+                    calls.extend(branch_calls);
+                    refs.extend(branch_refs);
+                }
+            }
+            StepKind::Race(race) => {
+                // Recurse into branches
+                for branch in &race.branches {
+                    let (branch_calls, branch_refs) = self.extract_steps_refs(&branch.steps);
+                    calls.extend(branch_calls);
+                    refs.extend(branch_refs);
+                }
+            }
         }
     }
 

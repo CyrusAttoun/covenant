@@ -1,0 +1,187 @@
+// std.http - HTTP Client
+//
+// Functions for making HTTP requests.
+// All operations require the `network` effect.
+//
+// Platform backends:
+// - Deno: fetch API
+// - Node.js: fetch API (Node 18+) or http/https modules
+// - Browser: fetch API
+// - WASI: wasi:http/outgoing-handler
+
+// ============================================================
+// Type Definitions
+// ============================================================
+
+snippet id="http.Response" kind="struct"
+
+fields
+  field name="status" type="Int"
+  field name="body" type="String"
+  field name="headers" type="Map<String, String>"
+end
+
+metadata
+  description="HTTP response containing status code, body content, and response headers"
+end
+
+end
+
+snippet id="http.HttpError" kind="enum"
+
+variants
+  variant name="NetworkError"
+    field name="message" type="String"
+  end
+  variant name="TimeoutError"
+    field name="message" type="String"
+  end
+  variant name="ParseError"
+    field name="message" type="String"
+  end
+end
+
+metadata
+  description="Errors that can occur during HTTP operations"
+end
+
+end
+
+// ============================================================
+// HTTP Functions
+// ============================================================
+
+snippet id="http.get" kind="extern-abstract"
+
+effects
+  effect network
+end
+
+signature
+  fn name="get"
+    param name="url" type="String"
+    param name="headers" type="optional Map<String, String>"
+    param name="timeout" type="optional Int"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  description="Send HTTP GET request"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end
+
+snippet id="http.post" kind="extern-abstract"
+
+effects
+  effect network
+end
+
+signature
+  fn name="post"
+    param name="url" type="String"
+    param name="body" type="String"
+    param name="content_type" type="optional String"
+    param name="headers" type="optional Map<String, String>"
+    param name="timeout" type="optional Int"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  description="Send HTTP POST request with body"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end
+
+snippet id="http.put" kind="extern-abstract"
+
+effects
+  effect network
+end
+
+signature
+  fn name="put"
+    param name="url" type="String"
+    param name="body" type="String"
+    param name="content_type" type="optional String"
+    param name="headers" type="optional Map<String, String>"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  description="Send HTTP PUT request with body"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end
+
+snippet id="http.delete" kind="extern-abstract"
+
+effects
+  effect network
+end
+
+signature
+  fn name="delete"
+    param name="url" type="String"
+    param name="headers" type="optional Map<String, String>"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  description="Send HTTP DELETE request"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end
+
+snippet id="http.request" kind="extern-abstract"
+
+effects
+  effect network
+end
+
+signature
+  fn name="request"
+    param name="url" type="String"
+    param name="method" type="String"
+    param name="body" type="optional String"
+    param name="content_type" type="optional String"
+    param name="headers" type="optional Map<String, String>"
+    param name="timeout" type="optional Int"
+    returns union
+      type="Response"
+      type="HttpError"
+    end
+  end
+end
+
+metadata
+  description="Send HTTP request with arbitrary method (GET, POST, PUT, DELETE, PATCH, etc.)"
+  cost_hint=moderate
+  latency_hint=slow
+end
+
+end

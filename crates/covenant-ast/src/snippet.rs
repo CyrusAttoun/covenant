@@ -223,6 +223,8 @@ pub enum StepKind {
     Transaction(TransactionStep),
     Traverse(TraverseStep),
     Construct(StructConstruction),
+    Parallel(ParallelStep),
+    Race(RaceStep),
 }
 
 // ===== Step Types =====
@@ -606,6 +608,31 @@ pub enum TraverseDirection {
     Outgoing,
     Incoming,
     Both,
+}
+
+// ===== Structured Concurrency =====
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Branch {
+    pub id: String,
+    pub steps: Vec<Step>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParallelStep {
+    pub branches: Vec<Branch>,
+    pub on_error: Option<String>,  // "fail_fast", "collect_all", "ignore_errors"
+    pub timeout: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RaceStep {
+    pub branches: Vec<Branch>,
+    pub on_timeout: Option<String>,  // "cancel", "return_partial"
+    pub timeout: Option<String>,
+    pub span: Span,
 }
 
 // ===== Other Sections (stubs for now) =====

@@ -1,0 +1,55 @@
+// std.crypto - Cryptographic Hashing and Random Generation
+//
+// Functions for cryptographic operations.
+// sha256 is pure (no effects).
+// random_bytes requires the `random` effect.
+//
+// Platform backends:
+// - Deno: Web Crypto API (crypto.subtle, crypto.getRandomValues)
+// - Node.js: crypto module
+// - Browser: Web Crypto API
+// - WASI: wasi:random
+
+// ============================================================
+// Hashing Functions (Pure)
+// ============================================================
+
+snippet id="crypto.sha256" kind="extern-abstract"
+
+signature
+  fn name="sha256"
+    param name="input" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Compute SHA-256 hash of input, returning hex string"
+  cost_hint=cheap
+end
+
+end
+
+// ============================================================
+// Random Generation (Requires random effect)
+// ============================================================
+
+snippet id="crypto.random_bytes" kind="extern-abstract"
+
+effects
+  effect random
+end
+
+signature
+  fn name="random_bytes"
+    param name="length" type="Int"
+    returns type="Bytes"
+  end
+end
+
+metadata
+  description="Generate cryptographically secure random bytes"
+  cost_hint=cheap
+end
+
+end

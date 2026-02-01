@@ -1,0 +1,66 @@
+// std.url - URL Parsing and Manipulation
+//
+// Functions for parsing, formatting, and resolving URLs.
+// All operations are pure (no effects required).
+//
+// Platform backends:
+// - Deno: URL API
+// - Node.js: URL API
+// - Browser: URL API
+// - WASI: Pure implementation
+
+// ============================================================
+// URL Functions
+// ============================================================
+
+snippet id="url.parse" kind="extern-abstract"
+
+signature
+  fn name="parse"
+    param name="raw" type="String"
+    returns union
+      type="Url"
+      type="UrlError"
+    end
+  end
+end
+
+metadata
+  description="Parse a URL string into a Url struct with protocol, host, port, pathname, search, and hash"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="url.format" kind="extern-abstract"
+
+signature
+  fn name="format"
+    param name="url" type="Url"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Format a Url struct back into a URL string"
+  cost_hint=cheap
+end
+
+end
+
+snippet id="url.resolve" kind="extern-abstract"
+
+signature
+  fn name="resolve"
+    param name="base" type="String"
+    param name="relative" type="String"
+    returns type="String"
+  end
+end
+
+metadata
+  description="Resolve a relative URL against a base URL, handling . and .. path components"
+  cost_hint=cheap
+end
+
+end

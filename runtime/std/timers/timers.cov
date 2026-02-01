@@ -1,0 +1,34 @@
+// std.timers - Timer Functions
+//
+// Functions for time-based delays and scheduling.
+// All operations require the `timers` effect.
+//
+// Platform backends:
+// - Deno: setTimeout, Deno.sleep
+// - Node.js: setTimeout, timers/promises
+// - Browser: setTimeout
+// - WASI: wasi:clocks/monotonic-clock
+
+// ============================================================
+// Timer Functions
+// ============================================================
+
+snippet id="timers.delay" kind="extern-abstract"
+
+effects
+  effect timers
+end
+
+signature
+  fn name="delay"
+    param name="ms" type="Int"
+    returns type="Unit"
+  end
+end
+
+metadata
+  description="Pause execution for the specified number of milliseconds"
+  cost_hint=moderate
+end
+
+end
