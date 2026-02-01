@@ -1324,3 +1324,489 @@ end
     assert!(closure.declared.contains("network.http.get"));
     assert!(closure.computed.contains("network.http.get"));
 }
+
+// ==========================================================================
+// PARAMETERIZED EFFECTS - Priority 2 Feature
+// ==========================================================================
+
+#[test]
+fn parameterized_effect_parses_correctly() {
+    // Basic test: verify parameterized effects parse without error
+    let source = r#"
+snippet id="fs.read_data" kind="extern"
+
+effects
+  effect filesystem(path="/data")
+end
+
+signature
+  fn name="read_data"
+    returns type="String"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(), "Parameterized effect should parse correctly");
+
+    let closure = result.closures.get("fs.read_data").expect("closure not found");
+    assert!(closure.declared.contains("filesystem"));
+    assert!(!closure.declared_full.is_empty());
+
+    // Check that the effect has a path parameter
+    let fs_effect = closure.declared_full.iter()
+        .find(|e| e.name == "filesystem")
+        .expect("filesystem effect not found");
+    assert!(fs_effect.has_params());
+    let path_param = fs_effect.get_param("path").expect("path param not found");
+    assert_eq!(path_param.value, covenant_ast::Literal::String("/data".to_string()));
+}
+
+#[test]
+fn parameterized_effect_without_params_covers_all() {
+    // If declared effect has no params, it covers any parameterized version (wildcard)
+    let source = r#"
+snippet id="fs.read_specific" kind="extern"
+
+effects
+  effect filesystem(path="/data/users")
+end
+
+signature
+  fn name="read_specific"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.process" kind="fn"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="process"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="fs.read_specific"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(),
+        "Effect without params should cover parameterized version (wildcard)");
+}
+
+#[test]
+fn parameterized_effect_path_prefix_subsumes() {
+    // Declared path="/data" should subsume required path="/data/users"
+    let source = r#"
+snippet id="fs.read_users" kind="extern"
+
+effects
+  effect filesystem(path="/data/users")
+end
+
+signature
+  fn name="read_users"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.get_users" kind="fn"
+
+effects
+  effect filesystem(path="/data")
+end
+
+signature
+  fn name="get_users"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="fs.read_users"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(),
+        "Path /data should subsume /data/users (prefix match)");
+}
+
+#[test]
+fn parameterized_effect_path_not_prefix_fails() {
+    // Declared path="/other" should NOT subsume required path="/data/users"
+    let source = r#"
+snippet id="fs.read_users" kind="extern"
+
+effects
+  effect filesystem(path="/data/users")
+end
+
+signature
+  fn name="read_users"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.get_users" kind="fn"
+
+effects
+  effect filesystem(path="/other")
+end
+
+signature
+  fn name="get_users"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="fs.read_users"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert_eq!(result.violations.len(), 1,
+        "Path /other should NOT subsume /data/users");
+
+    match &result.violations[0] {
+        EffectError::ParameterNotCovered {
+            function, effect_name, param_name, required_value, declared_value, ..
+        } => {
+            assert_eq!(function, "app.get_users");
+            assert_eq!(effect_name, "filesystem");
+            assert_eq!(param_name, "path");
+            assert_eq!(required_value, "\"/data/users\"");
+            assert_eq!(declared_value.as_ref().unwrap(), "\"/other\"");
+        }
+        _ => panic!("Expected ParameterNotCovered error, got {:?}", result.violations[0]),
+    }
+}
+
+#[test]
+fn parameterized_effect_multiple_params() {
+    // Test with multiple parameters
+    // Note: "table" is a keyword, so we use "target" instead
+    let source = r#"
+snippet id="db.query_users" kind="extern"
+
+effects
+  effect database(target="users", readonly=true)
+end
+
+signature
+  fn name="query_users"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.list_users" kind="fn"
+
+effects
+  effect database(target="users", readonly=true)
+end
+
+signature
+  fn name="list_users"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="db.query_users"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(),
+        "Matching multiple params should work");
+
+    let closure = result.closures.get("db.query_users").expect("closure not found");
+    let db_effect = closure.declared_full.iter()
+        .find(|e| e.name == "database")
+        .expect("database effect not found");
+
+    assert_eq!(db_effect.params.len(), 2);
+}
+
+#[test]
+fn parameterized_effect_int_param() {
+    // Test with integer parameter
+    let source = r#"
+snippet id="rate.limited_call" kind="extern"
+
+effects
+  effect ratelimit(max=100)
+end
+
+signature
+  fn name="limited_call"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.call" kind="fn"
+
+effects
+  effect ratelimit(max=100)
+end
+
+signature
+  fn name="call"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="rate.limited_call"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(),
+        "Matching integer params should work");
+}
+
+#[test]
+fn parameterized_effect_int_param_mismatch() {
+    // Different integer values should not match
+    let source = r#"
+snippet id="rate.limited_call" kind="extern"
+
+effects
+  effect ratelimit(max=100)
+end
+
+signature
+  fn name="limited_call"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.call" kind="fn"
+
+effects
+  effect ratelimit(max=50)
+end
+
+signature
+  fn name="call"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="rate.limited_call"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert_eq!(result.violations.len(), 1,
+        "Different integer param values should not match");
+
+    match &result.violations[0] {
+        EffectError::ParameterNotCovered { param_name, required_value, declared_value, .. } => {
+            assert_eq!(param_name, "max");
+            assert_eq!(required_value, "100");
+            assert_eq!(declared_value.as_ref().unwrap(), "50");
+        }
+        _ => panic!("Expected ParameterNotCovered error"),
+    }
+}
+
+#[test]
+fn parameterized_effect_transitive() {
+    // Parameterized effects should propagate transitively
+    let source = r#"
+snippet id="fs.read_log" kind="extern"
+
+effects
+  effect filesystem(path="/var/log")
+end
+
+signature
+  fn name="read_log"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="logger.get_last" kind="fn"
+
+effects
+  effect filesystem(path="/var/log")
+end
+
+signature
+  fn name="get_last"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="fs.read_log"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+
+snippet id="app.show_log" kind="fn"
+
+effects
+  effect filesystem(path="/var")
+end
+
+signature
+  fn name="show_log"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="logger.get_last"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(),
+        "Transitive parameterized effects should work with path prefix");
+}
+
+#[test]
+fn parameterized_effect_exact_path_match() {
+    // Exact same path should always work
+    let source = r#"
+snippet id="fs.read_config" kind="extern"
+
+effects
+  effect filesystem(path="/etc/config")
+end
+
+signature
+  fn name="read_config"
+    returns type="String"
+  end
+end
+
+end
+
+snippet id="app.get_config" kind="fn"
+
+effects
+  effect filesystem(path="/etc/config")
+end
+
+signature
+  fn name="get_config"
+    returns type="String"
+  end
+end
+
+body
+  step id="s1" kind="call"
+    fn="fs.read_config"
+    as="result"
+  end
+  step id="s2" kind="return"
+    from="result"
+    as="_"
+  end
+end
+
+end
+"#;
+
+    let result = check_effects_for_source(source);
+    assert!(result.violations.is_empty(),
+        "Exact path match should work");
+}

@@ -3939,13 +3939,57 @@ impl<'a> Parser<'a> {
             name.push('.');
             name.push_str(&segment);
         }
+
+        // Parse optional parameters: effect filesystem(path="/data")
+        let params = if self.at(TokenKind::LParen) {
+            self.parse_effect_params()?
+        } else {
+            Vec::new()
+        };
+
         let end = self.span();
 
         Ok(EffectDecl {
             name,
-            params: Vec::new(),
+            params,
             span: start.merge(end),
         })
+    }
+
+    /// Parse effect parameters: (key=value, key2=value2, ...)
+    fn parse_effect_params(&mut self) -> Result<Vec<EffectParam>, ParseError> {
+        self.consume(TokenKind::LParen)?;
+        let mut params = Vec::new();
+
+        while !self.at(TokenKind::RParen) && !self.at(TokenKind::Eof) {
+            let param_start = self.span();
+
+            // Parse parameter name
+            let param_name = self.consume_text(TokenKind::Ident)?;
+
+            // Expect '='
+            self.consume(TokenKind::Eq)?;
+
+            // Parse parameter value (literal)
+            let value = self.parse_literal()?;
+
+            let param_end = self.span();
+            params.push(EffectParam {
+                name: param_name,
+                value,
+                span: param_start.merge(param_end),
+            });
+
+            // Handle comma separator
+            if self.at(TokenKind::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        self.consume(TokenKind::RParen)?;
+        Ok(params)
     }
 
     fn parse_metadata_section(&mut self) -> Result<MetadataSection, ParseError> {

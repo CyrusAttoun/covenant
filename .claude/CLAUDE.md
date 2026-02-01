@@ -45,6 +45,8 @@ A machine-first programming language designed for LLM generation and navigation.
 - **Canonical ordering** — one valid way to write everything
 - **Every node has an ID** — enables precise queries and references
 - **Effects explicit** — declared in `effects` section, propagated transitively
+- **Parameterized effects** — capability narrowing via `effect filesystem(path="/data")`
+- **Runtime enforcement** — WASM imports gated by declared effects
 - **Requirements first-class** — specs and tests are queryable nodes
 - **WASM target** — sandboxed, capability-constrained, metered
 
@@ -56,6 +58,7 @@ snippet id="module.function_name" kind="fn"
 effects
   effect database
   effect network
+  effect filesystem(path="/data")   (* parameterized effect *)
 end
 
 requires
@@ -306,6 +309,71 @@ end
 end
 ```
 
+### Parameterized Effects
+
+Effects can take parameters for capability narrowing:
+
+```
+effects
+  effect filesystem(path="/data")     (* restrict to /data directory *)
+  effect database(readonly=true)      (* read-only database access *)
+end
+```
+
+**Subsumption rules:**
+- `effect filesystem` (no params) subsumes all `filesystem(path=...)` variants
+- `effect filesystem(path="/data")` subsumes `filesystem(path="/data/users")`
+- Parameters must match or be subsumed for effect validation to pass
+
+**Example:**
+```
+(* This function declares narrow filesystem access *)
+snippet id="files.read_config" kind="fn"
+
+effects
+  effect filesystem(path="/etc/app")
+end
+
+(* ... *)
+end
+
+(* Caller must declare at least the same or broader access *)
+snippet id="app.init" kind="fn"
+
+effects
+  effect filesystem(path="/etc")      (* broader - OK *)
+end
+
+(* ... *)
+end
+```
+
+### Runtime Effect Enforcement
+
+WASM imports are gated at runtime based on declared effects:
+
+```typescript
+// TypeScript host (runtime/host/src/capabilities.ts)
+const EFFECT_TO_IMPORTS = {
+  database: ["db.execute_query"],
+  network: ["http.fetch"],
+  filesystem: ["fs.read", "fs.write", ...],
+  console: ["console.println", ...],
+  "std.storage": ["std.storage.kv.get", ...],
+};
+```
+
+**Enforcement modes:**
+- **strict** (default): Undeclared imports throw errors
+- **warnOnly**: Log warnings but allow execution
+- **disabled**: Allow all imports (backwards compatibility)
+
+**How it works:**
+1. Compiler embeds `required_capabilities` in WASM data section
+2. Host extracts `CapabilityManifest` at module load
+3. `buildFilteredImports()` provides only permitted imports
+4. Unpermitted imports get error stubs
+
 ### Bidirectional References
 
 Compiler computes metadata on every symbol:
@@ -438,6 +506,63 @@ end
 - Node.js: Files (kv), SQLite (doc)
 - WASI: Preopened dir (kv), Embedded DB (doc)
 
+### Canonical Text Printer
+
+The compiler can serialize AST back to canonical `.cov` format:
+
+```bash
+# Format a file (outputs to stdout)
+covenant format examples/hello-world.cov
+
+# Check if file is canonical (exit 1 if not)
+covenant format --check examples/hello-world.cov
+
+# Write to file
+covenant format examples/hello-world.cov --output formatted.cov
+```
+
+**Use cases:**
+- AI code generation feedback loops (generate → canonicalize → validate)
+- Consistent formatting across the codebase
+- Round-trip testing (parse → print → parse → compare)
+
+**Implementation:** `crates/covenant-ast/src/printer.rs` with `ToCov` trait.
+
+### Diagnostic Tooling
+
+Enhanced error messages with fix suggestions and effect chain explanations:
+
+```bash
+# Verbose diagnostics with --explain
+covenant check --explain examples/missing-effect.cov
+```
+
+**Example output:**
+```
+error[E-EFFECT-002]: Missing effect declaration
+  --> examples/api.cov:15:3
+   |
+15 |   step id="s1" kind="call"
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^ calls effectful function
+   |
+   = note: `api.fetch_user` calls `db.query` which requires `database` effect
+   = note: Call chain: api.fetch_user → user.get_by_id → db.query (database)
+   = help: Add `effect database` to the effects section
+
+  Suggestion:
+    effects
+      effect database    (* add this line *)
+    end
+```
+
+**Features:**
+- Rich error context with source spans
+- Call chain tracing for effect violations
+- Fix suggestions (AddEffect, RemoveCall, WrapInEffectfulFunction)
+- Ariadne-powered structured output
+
+**Implementation:** `crates/covenant-checker/src/diagnostics.rs`
+
 ---
 
 ## Plan Mode Instructions
@@ -474,4 +599,13 @@ end
 
 **Active development.** Compiler pipeline implemented and functional (13 crates, CLI, WASM codegen).
 
-Current focus: structured concurrency, cross-platform storage, cross-snippet type checking.
+### Recently Implemented
+- **Runtime effect enforcement** — WASM imports gated by declared effects
+- **Parameterized effects** — `effect filesystem(path="/data")` with subsumption
+- **Canonical text printer** — AST → `.cov` serialization via `covenant format`
+- **Enhanced diagnostics** — Fix suggestions and effect chain explanations
+
+### Current Focus
+- Structured concurrency (`parallel` / `race` step kinds)
+- Cross-platform storage (`std.storage`)
+- Cross-snippet type checking

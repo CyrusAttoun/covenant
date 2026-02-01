@@ -69,11 +69,31 @@ pub struct EffectsSection {
     pub span: Span,
 }
 
+/// An effect parameter (key=value pair)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EffectParam {
+    pub name: String,
+    pub value: Literal,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EffectDecl {
     pub name: String,
-    pub params: Vec<String>,
+    pub params: Vec<EffectParam>,
     pub span: Span,
+}
+
+impl EffectDecl {
+    /// Check if this effect has a parameter with the given name
+    pub fn get_param(&self, name: &str) -> Option<&EffectParam> {
+        self.params.iter().find(|p| p.name == name)
+    }
+
+    /// Check if this effect has any parameters
+    pub fn has_params(&self) -> bool {
+        !self.params.is_empty()
+    }
 }
 
 // ===== Requirements Section =====

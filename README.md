@@ -107,6 +107,15 @@ Other useful commands:
 # Parse and check for errors
 covenant check examples/hello-world/hello-world.cov
 
+# Check with detailed diagnostics and fix suggestions
+covenant check --explain examples/hello-world/hello-world.cov
+
+# Format to canonical form
+covenant format examples/hello-world/hello-world.cov
+
+# Check if file is already canonical (exit 1 if not)
+covenant format --check examples/hello-world/hello-world.cov
+
 # Show symbol information
 covenant info examples/hello-world/hello-world.cov
 
@@ -153,6 +162,8 @@ Traditional languages optimize for human authorship. Covenant optimizes for mach
 | **Canonical ordering** | One valid way to write everything—deterministic output |
 | **Small grammar** | ~50 keywords, predictable token sequences |
 | **Every node has ID** | Precise queries and references, no guessing |
+| **Parameterized effects** | `effect filesystem(path="/data")` for capability narrowing |
+| **Runtime enforcement** | WASM imports gated by declared effects |
 
 The result: AI can generate valid code reliably and navigate codebases through structured queries instead of text search.
 
@@ -160,13 +171,16 @@ The result: AI can generate valid code reliably and navigate codebases through s
 
 ## Effects Are Explicit
 
-Every snippet declares what capabilities it needs. No effects section means pure:
+Every snippet declares what capabilities it needs. No effects section means pure.
+
+Effects can be parameterized for capability narrowing:
 
 ```covenant
 snippet id="user.get_by_id" kind="fn"
 
 effects
   effect database
+  effect filesystem(path="/data")   (* parameterized effect *)
 end
 
 signature
@@ -306,7 +320,11 @@ Covenant compiles to WASM and runs on multiple platforms:
 
 ### What Works
 - **Full compiler pipeline**: lex → parse → symbol graph → type check → codegen → WASM
-- **CLI tool** (`covenant`): `parse`, `check`, `compile`, `query`, `info`, `explain`, `effects`, `requirements`, `repl`, `run`
+- **CLI tool** (`covenant`): `parse`, `check`, `compile`, `query`, `info`, `explain`, `effects`, `requirements`, `repl`, `run`, `format`
+- **Parameterized effects**: `effect filesystem(path="/data")` with subsumption rules
+- **Runtime effect enforcement**: WASM imports gated by declared effects
+- **Canonical text printer**: AST → `.cov` serialization via `format` command
+- **Enhanced diagnostics**: Fix suggestions and effect chain explanations with `--explain`
 - **23 example programs** covering all major features
 - **Integration tests** passing (parsing, symbol graphs, type checking, effect validation, WASM codegen)
 
@@ -327,6 +345,33 @@ Covenant compiles to WASM and runs on multiple platforms:
 | `covenant-requirements` | Requirement coverage validation |
 | `covenant-llm` | AI explanation and code generation |
 | `covenant-cli` | Command-line interface |
+
+### Recent Additions
+
+**Parameterized Effects** — Effects can take parameters for capability narrowing:
+```covenant
+effects
+  effect filesystem(path="/data")     (* restrict to /data directory *)
+  effect database(readonly=true)      (* read-only database access *)
+end
+```
+
+**Runtime Effect Enforcement** — WASM imports are gated at module instantiation:
+- Compiler embeds `required_capabilities` in WASM data section
+- Host extracts `CapabilityManifest` and filters imports
+- Strict mode (default) throws errors for undeclared capabilities
+
+**Canonical Text Printer** — Round-trip AST to `.cov` text:
+```sh
+covenant format file.cov           # Print canonical form
+covenant format --check file.cov   # Verify canonical (exit 1 if not)
+```
+
+**Enhanced Diagnostics** — Rich error context with fix suggestions:
+```sh
+covenant check --explain file.cov
+# Shows: call chains, effect propagation, suggested fixes
+```
 
 ### Current Focus
 - Structured concurrency (built-in `parallel` / `race` step kinds)

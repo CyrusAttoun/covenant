@@ -119,7 +119,7 @@ pub enum ExprKind {
 }
 
 /// A literal value
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Literal {
     Int(i64),
     Float(f64),

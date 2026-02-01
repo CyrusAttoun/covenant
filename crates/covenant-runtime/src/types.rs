@@ -116,7 +116,7 @@ impl From<&covenant_symbols::SymbolInfo> for RuntimeSymbol {
             references: info.references.iter().cloned().collect(),
             called_by: Vec::new(), // Will be populated separately
             referenced_by: Vec::new(),
-            effects: info.declared_effects.clone(),
+            effects: info.declared_effects.iter().map(|e| e.name.clone()).collect(),
             effect_closure: Vec::new(), // Computed by effect checker
             requirements: info.requirements.clone(),
             tests: info.tests.clone(),

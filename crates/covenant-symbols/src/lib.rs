@@ -1058,8 +1058,8 @@ end
         let result = build_graph_from_source(source).expect("should build graph");
         let symbol = result.graph.get_by_name("io.write").unwrap();
 
-        assert!(symbol.declared_effects.contains(&"filesystem".to_string()));
-        assert!(symbol.declared_effects.contains(&"console".to_string()));
+        assert!(symbol.declared_effects.iter().any(|e| e.name == "filesystem"));
+        assert!(symbol.declared_effects.iter().any(|e| e.name == "console"));
         assert_eq!(symbol.declared_effects.len(), 2);
     }
 

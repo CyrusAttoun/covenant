@@ -1,6 +1,6 @@
 //! Symbol information and types
 
-use covenant_ast::{Span, SnippetKind};
+use covenant_ast::{EffectDecl, Span, SnippetKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -76,7 +76,7 @@ pub struct SymbolInfo {
     pub references: HashSet<String>,
 
     /// Declared effects (from effects section)
-    pub declared_effects: Vec<String>,
+    pub declared_effects: Vec<EffectDecl>,
 
     /// Relations declared (from relations section)
     pub relations_to: Vec<RelationRef>,

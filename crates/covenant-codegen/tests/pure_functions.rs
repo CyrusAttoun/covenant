@@ -975,14 +975,44 @@ end
         .get_typed_func::<i64, i64>(&mut store, "sum_list")
         .expect("Failed to get 'sum_list' function");
 
-    // For the MVP implementation, the for loop uses the length directly
-    // and iterates 0..length, using the index as the item value
-    // So sum_list(3) computes 0+1+2 = 3
-    // This tests the loop mechanics even without real memory access
-    assert_eq!(sum_list.call(&mut store, 3).unwrap(), 3);  // 0+1+2
-    assert_eq!(sum_list.call(&mut store, 5).unwrap(), 10); // 0+1+2+3+4
-    assert_eq!(sum_list.call(&mut store, 1).unwrap(), 0);  // just 0
-    assert_eq!(sum_list.call(&mut store, 0).unwrap(), 0);  // no iterations
+    // Get memory to write test arrays
+    // For loops expect fat pointers: (ptr << 32) | length
+    // Memory layout at ptr: [count:i32][item0:i64][item1:i64]...
+    let memory = instance.get_memory(&mut store, "memory")
+        .expect("Failed to get memory");
+
+    // Helper: write array to memory at given offset, return fat pointer
+    fn write_array(memory: &wasmtime::Memory, store: &mut wasmtime::Store<()>,
+                   offset: u32, items: &[i64]) -> i64 {
+        let data = memory.data_mut(store);
+        // Write count (i32)
+        data[offset as usize..offset as usize + 4]
+            .copy_from_slice(&(items.len() as i32).to_le_bytes());
+        // Write items (i64 each)
+        for (i, item) in items.iter().enumerate() {
+            let item_offset = offset as usize + 4 + i * 8;
+            data[item_offset..item_offset + 8]
+                .copy_from_slice(&item.to_le_bytes());
+        }
+        // Return fat pointer: (ptr << 32) | len
+        ((offset as i64) << 32) | (items.len() as i64)
+    }
+
+    // Test 1: [0, 1, 2] -> sum = 3
+    let ptr1 = write_array(&memory, &mut store, 1024, &[0, 1, 2]);
+    assert_eq!(sum_list.call(&mut store, ptr1).unwrap(), 3);
+
+    // Test 2: [0, 1, 2, 3, 4] -> sum = 10
+    let ptr2 = write_array(&memory, &mut store, 2048, &[0, 1, 2, 3, 4]);
+    assert_eq!(sum_list.call(&mut store, ptr2).unwrap(), 10);
+
+    // Test 3: [0] -> sum = 0
+    let ptr3 = write_array(&memory, &mut store, 3072, &[0]);
+    assert_eq!(sum_list.call(&mut store, ptr3).unwrap(), 0);
+
+    // Test 4: empty array -> sum = 0 (null pointer skips loop)
+    let ptr4 = write_array(&memory, &mut store, 4096, &[]);
+    assert_eq!(sum_list.call(&mut store, ptr4).unwrap(), 0);
 }
 
 // === String Type Tests (FAILS: String not implemented in WASM) ===

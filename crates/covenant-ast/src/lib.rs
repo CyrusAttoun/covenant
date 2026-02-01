@@ -11,6 +11,7 @@ mod decl;
 mod query;
 mod metadata;
 mod snippet;
+pub mod printer;
 
 pub use span::*;
 pub use types::*;

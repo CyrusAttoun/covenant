@@ -4,7 +4,7 @@
 
 use crate::{RelationRef, SymbolError, SymbolGraph, SymbolInfo, SymbolKind};
 use covenant_ast::{
-    BodySection, EffectsSection, RelationsSection, RequiresSection, ReturnType, ReturnValue,
+    BodySection, EffectDecl, EffectsSection, RelationsSection, RequiresSection, ReturnType, ReturnValue,
     Section, SignatureKind, SignatureSection, Snippet, SnippetKind, Step, StepKind, TestsSection,
     Type, TypeKind,
 };
@@ -88,9 +88,9 @@ impl SymbolExtractor {
         symbol
     }
 
-    /// Extract effect names from effects section
-    fn extract_effects(&self, effects: &EffectsSection) -> Vec<String> {
-        effects.effects.iter().map(|e| e.name.clone()).collect()
+    /// Extract effect declarations from effects section
+    fn extract_effects(&self, effects: &EffectsSection) -> Vec<EffectDecl> {
+        effects.effects.clone()
     }
 
     /// Extract requirement IDs from requires section

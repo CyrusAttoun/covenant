@@ -7,8 +7,12 @@ use clap::{Parser, Subcommand};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 
 use covenant_parser::parse;
+use covenant_ast::printer::to_cov;
 use covenant_symbols::build_symbol_graph;
-use covenant_checker::{check, check_effects, EffectError};
+use covenant_checker::{
+    check, check_effects, check_effects_with_diagnostics, EffectError,
+    Diagnostic,
+};
 use covenant_graph::{GraphBuilder, execute_query, parse_query};
 use covenant_codegen::{compile_pure, compile_with_symbols};
 use covenant_llm::{
@@ -92,6 +96,9 @@ enum Commands {
         /// Show only violations (errors)
         #[arg(long)]
         violations_only: bool,
+        /// Show verbose diagnostics with call chains and fix suggestions
+        #[arg(long)]
+        explain: bool,
     },
     /// Analyze requirement coverage
     Requirements {
@@ -109,6 +116,17 @@ enum Commands {
         /// Treat all uncovered requirements as errors (regardless of priority)
         #[arg(long)]
         strict: bool,
+    },
+    /// Format a file to canonical form
+    Format {
+        /// Input file
+        file: PathBuf,
+        /// Output file (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Check only - exit with error if file is not canonical
+        #[arg(long)]
+        check: bool,
     },
     /// Interactive REPL
     Repl,
@@ -135,10 +153,11 @@ async fn main() {
         Commands::Explain { file, format, verbosity, no_cache } => {
             cmd_explain(&file, &format, &verbosity, no_cache).await;
         }
-        Commands::Effects { files, violations_only } => cmd_effects(&files, violations_only),
+        Commands::Effects { files, violations_only, explain } => cmd_effects(&files, violations_only, explain),
         Commands::Requirements { files, report, uncovered_only, min_coverage, strict } => {
             cmd_requirements(&files, &report, uncovered_only, min_coverage, strict);
         }
+        Commands::Format { file, output, check } => cmd_format(&file, output, check),
         Commands::Repl => cmd_repl(),
         Commands::Run { file, optimize: opt_level } => cmd_run(&file, opt_level),
     }
@@ -492,7 +511,7 @@ fn cmd_info(file: &PathBuf) {
     println!("Legend: ○ = pure, ● = effectful");
 }
 
-fn cmd_effects(files: &[PathBuf], violations_only: bool) {
+fn cmd_effects(files: &[PathBuf], violations_only: bool, explain: bool) {
     let mut all_ok = true;
     let mut total_violations = 0;
 
@@ -529,7 +548,11 @@ fn cmd_effects(files: &[PathBuf], violations_only: bool) {
         };
 
         // Run effect checking (Phase 3)
-        let result = check_effects(&symbol_result.graph);
+        let (result, diagnostics) = if explain {
+            check_effects_with_diagnostics(&symbol_result.graph)
+        } else {
+            (check_effects(&symbol_result.graph), Vec::new())
+        };
         total_violations += result.violations.len();
 
         if !violations_only {
@@ -572,24 +595,20 @@ fn cmd_effects(files: &[PathBuf], violations_only: bool) {
         // Report violations
         if !result.violations.is_empty() {
             all_ok = false;
-            eprintln!("Effect violations in {}:", file.display());
-            for error in &result.violations {
-                match error {
-                    EffectError::PureCallsEffectful { function, callee, effects, span } => {
-                        eprintln!(
-                            "  E-EFFECT-001 [{}:{}]: pure function `{}` calls effectful `{}` (effects: {:?})",
-                            span.start, span.end, function, callee, effects
-                        );
-                    }
-                    EffectError::MissingEffect { function, missing, source_callee, span } => {
-                        eprintln!(
-                            "  E-EFFECT-002 [{}:{}]: function `{}` missing effect declarations {:?} (from `{}`)",
-                            span.start, span.end, function, missing, source_callee
-                        );
-                    }
+
+            if explain {
+                // Use rich diagnostics with ariadne
+                for (error, diagnostic) in result.violations.iter().zip(diagnostics.iter()) {
+                    report_effect_error_rich(&source, file, error, diagnostic);
                 }
+            } else {
+                // Use concise format
+                eprintln!("Effect violations in {}:", file.display());
+                for error in &result.violations {
+                    report_effect_error_concise(error);
+                }
+                eprintln!();
             }
-            eprintln!();
         }
     }
 
@@ -605,6 +624,87 @@ fn cmd_effects(files: &[PathBuf], violations_only: bool) {
     if !all_ok {
         std::process::exit(1);
     }
+}
+
+/// Report an effect error in concise format
+fn report_effect_error_concise(error: &EffectError) {
+    match error {
+        EffectError::PureCallsEffectful { function, callee, effects, span } => {
+            eprintln!(
+                "  E-EFFECT-001 [{}:{}]: pure function `{}` calls effectful `{}` (effects: {:?})",
+                span.start, span.end, function, callee, effects
+            );
+        }
+        EffectError::MissingEffect { function, missing, source_callee, span } => {
+            eprintln!(
+                "  E-EFFECT-002 [{}:{}]: function `{}` missing effect declarations {:?} (from `{}`)",
+                span.start, span.end, function, missing, source_callee
+            );
+        }
+        EffectError::ParameterNotCovered {
+            function, effect_name, param_name, required_value, declared_value, source_callee, span
+        } => {
+            eprintln!(
+                "  E-EFFECT-003 [{}:{}]: function `{}` effect `{}` parameter `{}` not covered (required: {}, declared: {:?}, from `{}`)",
+                span.start, span.end, function, effect_name, param_name, required_value, declared_value, source_callee
+            );
+        }
+    }
+}
+
+/// Report an effect error with rich diagnostics using ariadne
+fn report_effect_error_rich(source: &str, file: &PathBuf, error: &EffectError, diagnostic: &Diagnostic) {
+    let file_name = file.to_string_lossy().to_string();
+    let span = match error {
+        EffectError::PureCallsEffectful { span, .. } => span,
+        EffectError::MissingEffect { span, .. } => span,
+        EffectError::ParameterNotCovered { span, .. } => span,
+    };
+
+    // Build the main report
+    let mut report = Report::build(ReportKind::Error, file_name.clone(), span.start)
+        .with_code(&diagnostic.code)
+        .with_message(diagnostic.message());
+
+    // Add main label
+    report = report.with_label(
+        Label::new((file_name.clone(), span.start..span.end))
+            .with_message(diagnostic.message())
+            .with_color(Color::Red),
+    );
+
+    // Add related locations as labels
+    for related in &diagnostic.related {
+        report = report.with_label(
+            Label::new((file_name.clone(), related.span.start..related.span.end))
+                .with_message(&related.message)
+                .with_color(Color::Blue),
+        );
+    }
+
+    // Add help text with suggestions
+    if !diagnostic.suggestions.is_empty() {
+        let help_text = diagnostic.suggestions
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("{}. {}", i + 1, s.description()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        report = report.with_help(help_text);
+    }
+
+    // Add note with explanation
+    if !diagnostic.explanation.is_empty() {
+        report = report.with_note(&diagnostic.explanation);
+    }
+
+    // Print the report
+    report
+        .finish()
+        .eprint((file_name, Source::from(source)))
+        .unwrap();
+
+    eprintln!(); // Add blank line between errors
 }
 
 fn cmd_requirements(
@@ -677,6 +777,57 @@ fn cmd_requirements(
 
     if !all_ok {
         std::process::exit(1);
+    }
+}
+
+fn cmd_format(file: &PathBuf, output: Option<PathBuf>, check: bool) {
+    let source = match fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let program = match parse(&source) {
+        Ok(p) => p,
+        Err(e) => {
+            report_parse_error(&source, file, &e);
+            std::process::exit(1);
+        }
+    };
+
+    // Convert to canonical form
+    let canonical = to_cov(&program);
+
+    if check {
+        // Check mode - compare with original
+        // Normalize both for comparison (trim trailing whitespace from lines)
+        let normalize = |s: &str| -> String {
+            s.lines()
+                .map(|line| line.trim_end())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let original_normalized = normalize(&source);
+        let canonical_normalized = normalize(&canonical);
+
+        if original_normalized != canonical_normalized {
+            eprintln!("{} is not in canonical form", file.display());
+            std::process::exit(1);
+        }
+        println!("{} is in canonical form", file.display());
+    } else if let Some(out_path) = output {
+        // Write to output file
+        if let Err(e) = fs::write(&out_path, &canonical) {
+            eprintln!("Error writing to {}: {}", out_path.display(), e);
+            std::process::exit(1);
+        }
+        println!("Formatted {} -> {}", file.display(), out_path.display());
+    } else {
+        // Print to stdout
+        println!("{}", canonical);
     }
 }
 

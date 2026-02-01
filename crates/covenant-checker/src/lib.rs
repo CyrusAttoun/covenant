@@ -7,12 +7,14 @@ mod symbols;
 mod checker;
 mod effects;
 mod snippet_checker;
+mod diagnostics;
 
 pub use types::*;
 pub use symbols::*;
 pub use checker::*;
 pub use effects::*;
 pub use snippet_checker::SnippetChecker;
+pub use diagnostics::*;
 
 use covenant_ast::Program;
 use thiserror::Error;
