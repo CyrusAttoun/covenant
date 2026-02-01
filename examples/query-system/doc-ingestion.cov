@@ -38,7 +38,7 @@ body
 
   // Input directory to scan
   step id="s2" kind="bind"
-    lit="docs/guide"
+    lit="../../docs/guide"
     as="input_dir"
   end
 
@@ -99,9 +99,142 @@ body
     as="_"
   end
 
+  // Generate the index.cov file with relations to all ingested docs
   step id="s7" kind="call"
+    fn="doc_ingest.generate_index"
+    arg name="input_dir" from="input_dir"
+    arg name="output_dir" from="output_dir"
+    arg name="entries" from="entries"
+    as="_"
+  end
+
+  step id="s8" kind="call"
     fn="console.println"
     arg name="message" lit="Documentation ingestion demo complete."
+    as="_"
+  end
+end
+
+end
+
+// =============================================================================
+// Index Generator
+// =============================================================================
+
+snippet id="doc_ingest.generate_index" kind="fn"
+
+effects
+  effect filesystem
+end
+
+signature
+  fn name="generate_index"
+    param name="input_dir" type="String"
+    param name="output_dir" type="String"
+    param name="entries" type="List"
+    returns union
+      type="String"
+      type="IoError"
+    end
+  end
+end
+
+body
+  // Start building the index.cov content
+  step id="s1" kind="bind"
+    lit="snippet id=\"index\" kind=\"data\"\n\nmetadata\n  type=\"index\"\n  generated=\"true\"\nend\n\ncontent\n  \"\"\"\n  Documentation Index\n  Generated from "
+    as="header"
+  end
+
+  step id="s2" kind="call"
+    fn="text.concat"
+    arg name="a" from="header"
+    arg name="b" from="input_dir"
+    as="header_with_dir"
+  end
+
+  step id="s3" kind="call"
+    fn="text.concat"
+    arg name="a" from="header_with_dir"
+    arg name="b" lit="\n  \"\"\"\nend\n\nrelations\n"
+    as="content_start"
+  end
+
+  // Build relations by iterating through entries
+  step id="s4" kind="bind"
+    from="content_start"
+    as="relations_content"
+  end
+
+  step id="s5" kind="for"
+    var="filename" in="entries"
+
+    // Build full path
+    step id="s5a" kind="call"
+      fn="path.join"
+      arg name="base" from="input_dir"
+      arg name="segment" from="filename"
+      as="file_path"
+    end
+
+    // Convert to snippet ID
+    step id="s5b" kind="call"
+      fn="doc_ingest.path_to_snippet_id"
+      arg name="file_path" from="file_path"
+      as="snippet_id"
+    end
+
+    // Build relation line: rel to="snippet_id" type=contains
+    step id="s5c" kind="call"
+      fn="text.concat"
+      arg name="a" lit="  rel to=\""
+      arg name="b" from="snippet_id"
+      as="rel_start"
+    end
+
+    step id="s5d" kind="call"
+      fn="text.concat"
+      arg name="a" from="rel_start"
+      arg name="b" lit="\" type=contains\n"
+      as="rel_line"
+    end
+
+    // Append to relations content
+    step id="s5e" kind="call"
+      fn="text.concat"
+      arg name="a" from="relations_content"
+      arg name="b" from="rel_line"
+      as="relations_content"
+    end
+
+    as="_"
+  end
+
+  // Close the relations section and snippet
+  step id="s6" kind="call"
+    fn="text.concat"
+    arg name="a" from="relations_content"
+    arg name="b" lit="end\n\nend\n"
+    as="final_content"
+  end
+
+  // Write the index.cov file
+  step id="s7" kind="call"
+    fn="path.join"
+    arg name="base" from="output_dir"
+    arg name="segment" lit="index.cov"
+    as="index_path"
+  end
+
+  step id="s8" kind="call"
+    fn="fs.write_file"
+    arg name="path" from="index_path"
+    arg name="content" from="final_content"
+    as="_"
+  end
+
+  step id="s9" kind="return"
+    from="index_path"
     as="_"
   end
 end
@@ -250,10 +383,19 @@ body
     as="no_ext"
   end
 
+  // Remove path traversal sequences
+  step id="s2b" kind="call"
+    fn="text.replace_all"
+    arg name="s" from="no_ext"
+    arg name="from" lit="../"
+    arg name="to" lit=""
+    as="no_traversal"
+  end
+
   // Replace path separators with dots
   step id="s3" kind="call"
     fn="text.replace_all"
-    arg name="s" from="no_ext"
+    arg name="s" from="no_traversal"
     arg name="from" lit="/"
     arg name="to" lit="."
     as="dotted"
@@ -515,9 +657,10 @@ signature
 end
 
 body
-  // Replace any triple-quote sequences to avoid breaking the output format
+  // Replace ALL triple-quote sequences to avoid breaking the output format
+  // Note: must use replace_all, not replace, to handle multiple occurrences
   step id="s1" kind="call"
-    fn="text.replace"
+    fn="text.replace_all"
     arg name="s" from="raw"
     arg name="from" lit="\"\"\""
     arg name="to" lit="\\\"\\\"\\\""

@@ -158,7 +158,7 @@ impl DataGraph {
                     SnippetKind::Test => "test",
                     SnippetKind::Data => "data", // Won't happen due to continue above
                 };
-                let mut metadata = vec![("kind".to_string(), kind_str.to_string())];
+                let metadata = vec![("kind".to_string(), kind_str.to_string())];
                 nodes.push(DataNode {
                     id,
                     kind: kind_str.to_string(),

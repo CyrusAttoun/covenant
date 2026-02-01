@@ -1,58 +1,76 @@
 # Query System Examples
 
-This directory contains examples demonstrating Covenant's embedded query system - the ability to compile documentation and data into WASM modules and query them at runtime.
+Covenant's embedded query system compiles documentation into WASM modules that can be queried at runtime. This directory demonstrates a cohesive pipeline from document ingestion to interactive querying.
 
-## Examples
+## Pipeline Overview
+
+```
+docs/guide/*.md  →  doc-ingestion.wasm  →  output/*.cov  →  build.sh  →  *.wasm  →  query-repl.ts
+   (source)           (ingestion)          (data nodes)    (compile)    (query)      (REPL)
+```
+
+1. **Ingest**: `doc-ingestion.cov` reads external documentation and generates `.cov` data files
+2. **Build**: `build.sh` concatenates generated data with query examples and compiles to WASM
+3. **Query**: `query-repl.ts` provides an interactive CLI to search and explore
+
+## Quick Start
+
+```bash
+# Build everything
+./build.sh
+
+# Start the REPL
+deno run --allow-read query-repl.ts
+
+# In the REPL:
+query> :load output/rag-query.wasm
+query> :query effects
+query> get_all_docs
+query> :quit
+```
+
+## Files
 
 | File | Description |
 |------|-------------|
-| `doc-ingestion.cov` | Tool for processing external documentation into Covenant data nodes |
-| `embedded-query.cov` | Basic embedded queries against `kind="data"` snippets |
-| `rag-query.cov` | Full RAG (Retrieval-Augmented Generation) system with keyword search and relation traversal |
-| `parameterized-query.cov` | Queries with runtime string parameters (dynamic search) |
+| `doc-ingestion.cov` | Ingests docs/guide/ → generates .cov data files + index.cov |
+| `embedded-query.cov` | Basic queries: find_docs, ORDER BY, LIMIT |
+| `parameterized-query.cov` | Dynamic search with runtime string parameters |
+| `relation-traversal.cov` | Graph traversal from the generated index node |
+| `rag-query.cov` | Full RAG system: search, traverse, hierarchy, code-doc linking |
+| `build.sh` | Build script: ingest → concatenate → compile |
+| `query-repl.ts` | Interactive REPL for querying compiled modules |
+| `run-ingestion.ts` | Runner for the ingestion WASM |
 
-## Progression
+## REPL Commands
 
-1. **Start with `embedded-query.cov`** - Learn the basics of embedding data and querying with `target="project"`
-2. **Explore `rag-query.cov`** - See a complete RAG system with multiple query patterns and relations
-3. **Try `parameterized-query.cov`** - Learn how to pass runtime parameters for dynamic queries
+```
+:load <file.wasm>   Load a compiled module
+:query <term>       Search all data nodes for term (easy search)
+:list               List available query functions
+:nodes              List all nodes in the module
+:help               Show help
+:quit               Exit
 
-## Building
-
-From the project root:
-
-```bash
-# Compile all query examples
-covenant compile examples/query-system/embedded-query.cov -o examples/query-system/output/embedded-query.wasm
-covenant compile examples/query-system/rag-query.cov -o examples/query-system/output/rag-query.wasm
-covenant compile examples/query-system/parameterized-query.cov -o examples/query-system/output/parameterized-query.wasm
+Direct function calls:
+  get_all_docs            Call a no-arg function
+  search_by_keyword "x"   Call with string argument
 ```
 
-## Testing
+## Learning Progression
 
-From the `examples/query-system/` directory:
-
-```bash
-deno run --allow-read test-embedded.ts
-deno run --allow-read test-rag.ts
-deno run --allow-read test-parameterized.ts
-```
+1. **embedded-query.cov** - Basic queries, ORDER BY, LIMIT
+2. **parameterized-query.cov** - Runtime string parameters (`var="term"`)
+3. **relation-traversal.cov** - Graph navigation from index node
+4. **rag-query.cov** - Complete RAG with search + traversal + hierarchy
 
 ## Key Concepts
 
-### Embedding Data
+### Data Ingestion
 
-Data is embedded using `kind="data"` snippets:
-
-```covenant
-snippet id="docs.hello" kind="data"
-  content
-    """
-    Your documentation content here...
-    """
-  end
-end
-```
+`doc-ingestion.cov` reads markdown files and generates:
+- Individual `.cov` files for each document
+- An `index.cov` with `contains` relations to all documents
 
 ### Querying Embedded Data
 
@@ -64,46 +82,31 @@ step id="s1" kind="query"
   select all
   from="snippets"
   where
-    contains field="content" lit="search term"
+    contains field="content" var="search_term"
   end
   as="results"
 end
 ```
 
-### Parameterized Queries
+### Relation Traversal
 
-For runtime parameters, use `var="param_name"` instead of `lit="value"`:
+Navigate the document graph using traverse steps:
 
 ```covenant
-snippet id="query.search" kind="fn"
-  signature
-    fn name="search"
-      param name="term" type="String"
-      returns type="Any"
-    end
-  end
-
-  body
-    step id="s1" kind="query"
-      target="project"
-      select all
-      from="snippets"
-      where
-        contains field="content" var="term"
-      end
-      as="results"
-    end
-    ...
-  end
+step id="s1" kind="traverse"
+  target="project"
+  from="index"
+  follow type=contains
+  depth=1
+  direction=outgoing
+  as="all_docs"
 end
 ```
 
-Call from TypeScript:
+## Testing
 
-```typescript
-const runner = new CovenantQueryRunner();
-await runner.load("./output/parameterized-query.wasm");
-
-const results = runner.queryWithString("search", "user input here");
-const nodes = runner.getQueryResultNodes(results);
+```bash
+deno run --allow-read test-embedded.ts
+deno run --allow-read test-parameterized.ts
+deno run --allow-read test-rag.ts
 ```
