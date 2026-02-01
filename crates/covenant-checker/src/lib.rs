@@ -60,6 +60,9 @@ pub enum CheckError {
         extern_id: String,
         target: String,
     },
+
+    #[error("extern snippet '{id}' must have a namespaced ID (e.g., 'module.function')")]
+    InvalidExternId { id: String },
 }
 
 /// Check a program and return the typed/annotated version

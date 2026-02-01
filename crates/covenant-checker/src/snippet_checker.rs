@@ -74,7 +74,16 @@ impl SnippetChecker {
         // First pass: register all types and function signatures
         for snippet in snippets {
             match snippet.kind {
-                SnippetKind::Function | SnippetKind::Extern | SnippetKind::ExternAbstract => {
+                SnippetKind::Extern | SnippetKind::ExternAbstract => {
+                    // Extern snippets must have namespaced IDs (contain a dot)
+                    if !snippet.id.contains('.') {
+                        self.errors.push(CheckError::InvalidExternId {
+                            id: snippet.id.clone(),
+                        });
+                    }
+                    self.register_function_signature(snippet);
+                }
+                SnippetKind::Function => {
                     self.register_function_signature(snippet);
                 }
                 SnippetKind::Struct => self.register_struct_type(snippet),

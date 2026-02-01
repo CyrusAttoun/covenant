@@ -184,7 +184,7 @@ end
 // The host runtime can refuse to grant effect meta to untrusted code.
 
 // Extern stub for list search
-snippet id="find" kind="extern"
+snippet id="list.find" kind="extern"
 signature
   fn name="find"
     param name="list" type="Any"
@@ -269,7 +269,7 @@ body
 
   // Find the field
   step id="s2" kind="call"
-    fn="find"
+    fn="list.find"
     arg name="list" from="struct_info"
     arg name="pred" from="field_name"
     as="field"

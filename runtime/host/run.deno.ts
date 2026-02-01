@@ -235,6 +235,13 @@ const imports: WebAssembly.Imports = {
       }
       return writeStrArray(result);
     },
+    find: (list_ptr: number, list_len: number, pred_ptr: number, pred_len: number): bigint => {
+      // Find item matching predicate (exact string match for now)
+      const items = readStrArray(list_ptr, list_len);
+      const predicate = readStr(pred_ptr, pred_len);
+      const found = items.find(item => item === predicate);
+      return found ? writeStr(found) : 0n;
+    },
   },
   map: {
     get: (ptr: number, len: number, key_ptr: number, key_len: number): bigint => {
